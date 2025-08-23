@@ -23,3 +23,7 @@ cookie:
   expiry_days: 30
   key: 'spfc' # Mude para qualquer string aleatória
   name: 'cookie_dashboard_garantia' # Nome único para o cookie
+
+# --- ADICIONE ESTA SEÇÃO ---
+preauthorized:
+  emails: []
