@@ -7,3 +7,5 @@ Requests==2.32.5
 streamlit==1.45.1
 tqdm==4.67.1
 openpyxl
+streamlit-authenticator
+PyYAML
