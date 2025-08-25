@@ -693,6 +693,324 @@ if st.session_state["authentication_status"]:
         else:
             st.warning("As colunas 'name', 'title' e/ou 'answer' não foram encontradas na tabela de respostas.")
 
+            # --- ANÁLISE DE RECORRÊNCIA DE PROBLEMAS ---
+        st.subheader("🔄 Análise de Recorrência de Problemas")
+
+        # Verificar se temos as colunas necessárias
+        required_columns = ['colaborador_nome', 'order']
+        date_columns = ['createdAt', 'startedAt', 'completedAt', 'updatedAt']
+
+        # Encontrar coluna de data disponível
+        date_column = None
+        for col in date_columns:
+            if col in atividades.columns:
+                date_column = col
+                break
+
+        if all(col in atividades.columns for col in required_columns) and date_column:
+            
+            # Fazer merge com a tabela de ordens de serviço para obter o tipo de serviço
+            if 'ordens_servico' in locals() and ordens_servico is not None:
+                # Verificar se as colunas necessárias existem
+                if 'id' in ordens_servico.columns and 'Tipo de Serviço' in ordens_servico.columns:
+                    
+                    # Merge das tabelas
+                    atividades_com_tipo = atividades.merge(
+                        ordens_servico[['id', 'Tipo de Serviço']], 
+                        left_on='order', 
+                        right_on='id', 
+                        how='left'
+                    )
+                    
+                else:
+                    st.error("Colunas 'id' ou 'Tipo de Serviço' não encontradas na tabela ordens_servico")
+                    st.info(f"Colunas disponíveis em ordens_servico: {list(ordens_servico.columns)}")
+                    atividades_com_tipo = atividades.copy()
+            else:
+                st.error("Tabela 'ordens_servico' não encontrada. Certifique-se de carregar o arquivo ordens_de_servico.xlsx")
+                atividades_com_tipo = atividades.copy()
+            
+            # Converter coluna de data para datetime e remover timezone para comparação
+            atividades_com_tipo[date_column] = pd.to_datetime(atividades_com_tipo[date_column]).dt.tz_localize(None)
+            
+            # Converter datas de filtro para datetime
+            data_inicio_dt = pd.to_datetime(data_inicio)
+            data_fim_dt = pd.to_datetime(data_fim)
+            
+            # Filtrar atividades do período selecionado
+            atividades_periodo = atividades_com_tipo[
+                (atividades_com_tipo[date_column] >= data_inicio_dt) & 
+                (atividades_com_tipo[date_column] <= data_fim_dt)
+            ].copy()
+            
+            # Filtrar apenas tipo de serviço "Garantia" se a coluna existir
+            if 'Tipo de Serviço' in atividades_periodo.columns:
+                # Filtrar por Garantia (case-insensitive)
+                atividades_periodo = atividades_periodo[
+                    atividades_periodo['Tipo de Serviço'].str.upper().str.contains('GARANTIA', na=False)
+                ].copy()
+            else:
+                st.warning(f"⚠️ Coluna 'Tipo de Serviço' não encontrada após merge.")
+                st.info(f"Análise será feita com todos os tipos de serviço")
+            
+            if not atividades_periodo.empty:
+                
+                # Agrupar por OS e identificar primeira atividade e total de atividades
+                recorrencia_data = []
+                
+                for os_id in atividades_periodo['order'].unique():
+                    # Filtrar apenas valores não nulos para order
+                    if pd.isna(os_id):
+                        continue
+                        
+                    atividades_os = atividades_periodo[
+                        atividades_periodo['order'] == os_id
+                    ].sort_values(date_column)
+                    
+                    if len(atividades_os) > 0:
+                        # Primeira atividade (responsável)
+                        primeira_atividade = atividades_os.iloc[0]
+                        colaborador_responsavel = primeira_atividade['colaborador_nome']
+                        
+                        # Verificar se colaborador não é nulo
+                        if pd.isna(colaborador_responsavel):
+                            colaborador_responsavel = "Não informado"
+                        
+                        # Total de atividades na OS
+                        total_atividades = len(atividades_os)
+                        
+                        # Recorrências = total - 1 (primeira não conta como recorrência)
+                        recorrencias = total_atividades - 1
+                        
+                        recorrencia_data.append({
+                            'order_id': os_id,
+                            'colaborador_responsavel': colaborador_responsavel,
+                            'total_atividades': total_atividades,
+                            'recorrencias': recorrencias,
+                            'data_primeira_atividade': primeira_atividade[date_column],
+                            'tipo_servico': primeira_atividade.get('Tipo de Serviço', 'N/A')
+                        })
+                
+                if recorrencia_data:
+                    df_recorrencia = pd.DataFrame(recorrencia_data)
+                    
+                    # Calcular métricas por colaborador
+                    metricas_colaborador = df_recorrencia.groupby('colaborador_responsavel').agg({
+                        'order_id': 'count',  # Total de OS iniciadas
+                        'recorrencias': ['sum', 'mean'],  # Total e média de recorrências
+                        'total_atividades': 'sum'  # Total de atividades geradas
+                    }).round(2)
+                    
+                    # Flatten column names
+                    metricas_colaborador.columns = [
+                        'os_iniciadas', 'total_recorrencias', 'media_recorrencias', 'total_atividades'
+                    ]
+                    
+                    # Calcular percentual de OS com recorrência
+                    os_com_recorrencia = df_recorrencia.groupby('colaborador_responsavel').apply(
+                        lambda x: (x['recorrencias'] > 0).sum()
+                    )
+                    
+                    metricas_colaborador['os_com_recorrencia'] = os_com_recorrencia
+                    metricas_colaborador['percentual_recorrencia'] = (
+                        (metricas_colaborador['os_com_recorrencia'] / metricas_colaborador['os_iniciadas']) * 100
+                    ).round(2)
+                    
+                    # Reset index para usar como dataframe normal
+                    metricas_colaborador = metricas_colaborador.reset_index()
+                    
+                    # VISUALIZAÇÕES
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.subheader("📊 Média de Recorrências por Colaborador")
+                        if len(metricas_colaborador) > 0:
+                            # Ordenar por média de recorrências (decrescente) para o gráfico
+                            dados_grafico_media = metricas_colaborador.sort_values('media_recorrencias', ascending=False)
+                            
+                            fig_media = px.bar(
+                                dados_grafico_media.head(15),
+                                y='colaborador_responsavel',
+                                x='media_recorrencias',
+                                orientation='h',
+                                text='media_recorrencias',
+                                title="Top 15 - Média de Recorrências",
+                                color='media_recorrencias',
+                                color_continuous_scale='Reds'
+                            )
+                            
+                            fig_media.update_layout(
+                                yaxis={'categoryorder':'total ascending'},
+                                height=600,
+                                xaxis_title="Média de Recorrências",
+                                yaxis_title="",
+                                showlegend=False
+                            )
+                            
+                            fig_media.update_traces(
+                                textposition='auto',
+                                textfont_size=10
+                            )
+                            
+                            st.plotly_chart(fig_media, use_container_width=True)
+                    
+                    with col2:
+                        st.subheader("📈 Percentual de OS com Recorrência")
+                        if len(metricas_colaborador) > 0:
+                            # Ordenar por percentual de recorrência (decrescente) para o gráfico
+                            dados_grafico_percent = metricas_colaborador.sort_values('percentual_recorrencia', ascending=False)
+                            
+                            fig_percent = px.bar(
+                                dados_grafico_percent.head(15),
+                                y='colaborador_responsavel',
+                                x='percentual_recorrencia',
+                                orientation='h',
+                                text='percentual_recorrencia',
+                                title="Top 15 - % OS com Recorrência",
+                                color='percentual_recorrencia',
+                                color_continuous_scale='Oranges'
+                            )
+                            
+                            fig_percent.update_layout(
+                                yaxis={'categoryorder':'total ascending'},
+                                height=600,
+                                xaxis_title="Percentual (%)",
+                                yaxis_title="",
+                                showlegend=False
+                            )
+                            
+                            fig_percent.update_traces(
+                                textposition='auto',
+                                textfont_size=10,
+                                texttemplate='%{text}%'
+                            )
+                            
+                            st.plotly_chart(fig_percent, use_container_width=True)
+                    
+                    # RESUMO GERAL
+                    st.subheader("📋 Resumo Geral")
+                    col_resumo1, col_resumo2, col_resumo3, col_resumo4 = st.columns(4)
+                    
+                    total_os = len(df_recorrencia)
+                    total_os_com_recorrencia = len(df_recorrencia[df_recorrencia['recorrencias'] > 0])
+                    media_geral_recorrencias = df_recorrencia['recorrencias'].mean()
+                    percentual_geral_recorrencia = (total_os_com_recorrencia / total_os * 100) if total_os > 0 else 0
+                    
+                    with col_resumo1:
+                        st.metric("Total de OS", total_os)
+                    
+                    with col_resumo2:
+                        st.metric("OS com Recorrência", total_os_com_recorrencia)
+                    
+                    with col_resumo3:
+                        st.metric("Média Geral de Recorrências", f"{media_geral_recorrencias:.2f}")
+                    
+                    with col_resumo4:
+                        st.metric("% Geral de Recorrência", f"{percentual_geral_recorrencia:.1f}%")
+                    
+                    # TABELA DETALHADA COM OPÇÃO DE ORDENAÇÃO
+                    st.subheader("📊 Ranking Detalhado por Colaborador")
+                    
+                    # Opção para escolher ordenação
+                    col_ordem1, col_ordem2 = st.columns(2)
+                    with col_ordem1:
+                        criterio_ordenacao = st.selectbox(
+                            "Ordenar por:",
+                            ['% Recorrência', 'Média Recorrências', 'Total Recorrências', 'OS Iniciadas'],
+                            key="ordem_recorrencia"
+                        )
+                    
+                    with col_ordem2:
+                        ordem_crescente = st.selectbox(
+                            "Ordem:",
+                            ['Decrescente', 'Crescente'],
+                            key="tipo_ordem_recorrencia"
+                        )
+                    
+                    # Aplicar ordenação baseada na seleção
+                    if criterio_ordenacao == '% Recorrência':
+                        metricas_ordenadas = metricas_colaborador.sort_values(
+                            'percentual_recorrencia', 
+                            ascending=(ordem_crescente == 'Crescente')
+                        )
+                    elif criterio_ordenacao == 'Média Recorrências':
+                        metricas_ordenadas = metricas_colaborador.sort_values(
+                            'media_recorrencias', 
+                            ascending=(ordem_crescente == 'Crescente')
+                        )
+                    elif criterio_ordenacao == 'Total Recorrências':
+                        metricas_ordenadas = metricas_colaborador.sort_values(
+                            'total_recorrencias', 
+                            ascending=(ordem_crescente == 'Crescente')
+                        )
+                    else:  # OS Iniciadas
+                        metricas_ordenadas = metricas_colaborador.sort_values(
+                            'os_iniciadas', 
+                            ascending=(ordem_crescente == 'Crescente')
+                        )
+                    
+                    # Preparar tabela para exibição
+                    tabela_display = metricas_ordenadas.copy()
+                    tabela_display.columns = [
+                        'Colaborador', 'OS Iniciadas', 'Total Recorrências', 
+                        'Média Recorrências', 'Total Atividades', 'OS c/ Recorrência', '% Recorrência'
+                    ]
+                    
+                    # Formatar colunas
+                    tabela_display['Média Recorrências'] = tabela_display['Média Recorrências'].apply(lambda x: f"{x:.2f}")
+                    tabela_display['% Recorrência'] = tabela_display['% Recorrência'].apply(lambda x: f"{x:.1f}%")
+                    
+                    st.dataframe(
+                        tabela_display,
+                        use_container_width=True,
+                        hide_index=True
+                    )
+                    
+                    # ANÁLISE POR PERÍODO (OPCIONAL)
+                    if st.checkbox("📅 Mostrar Análise Temporal de Recorrências"):
+                        st.subheader("📅 Evolução das Recorrências por Período")
+                        
+                        # Adicionar coluna de mês/ano para análise temporal
+                        df_recorrencia['mes_ano'] = df_recorrencia['data_primeira_atividade'].dt.to_period('M')
+                        
+                        evolucao_temporal = df_recorrencia.groupby('mes_ano').agg({
+                            'order_id': 'count',
+                            'recorrencias': ['sum', 'mean']
+                        }).round(2)
+                        
+                        evolucao_temporal.columns = ['total_os', 'total_recorrencias', 'media_recorrencias']
+                        evolucao_temporal = evolucao_temporal.reset_index()
+                        evolucao_temporal['mes_ano_str'] = evolucao_temporal['mes_ano'].astype(str)
+                        
+                        fig_temporal = px.line(
+                            evolucao_temporal,
+                            x='mes_ano_str',
+                            y='media_recorrencias',
+                            title="Evolução da Média de Recorrências por Mês",
+                            markers=True
+                        )
+                        
+                        fig_temporal.update_layout(
+                            xaxis_title="Período",
+                            yaxis_title="Média de Recorrências",
+                            height=400
+                        )
+                        
+                        st.plotly_chart(fig_temporal, use_container_width=True)
+                    
+                else:
+                    st.info("Nenhum dado de recorrência encontrado para o período selecionado.")
+            
+            else:
+                st.info("Nenhuma atividade de Garantia encontrada para o período selecionado.")
+
+        else:
+            missing_cols = [col for col in required_columns if col not in atividades.columns]
+            st.error(f"Colunas necessárias não encontradas: {missing_cols}. Coluna de data também é necessária.")
+            if not date_column:
+                st.error(f"Nenhuma coluna de data encontrada. Colunas procuradas: {date_columns}")
+                st.info(f"Colunas disponíveis no dataset: {list(atividades.columns)}")         
+
         # --- SEÇÃO AGENDA DOS TÉCNICOS ---
         st.markdown("---")
         st.header("🗓️ Agenda dos Técnicos")
