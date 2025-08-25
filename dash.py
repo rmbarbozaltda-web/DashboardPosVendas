@@ -8,15 +8,12 @@ from datetime import datetime, timedelta
 import warnings
 import io
 import pytz
-
 # --- INÍCIO DA PARTE DE AUTENTICAÇÃO ---
 import streamlit_authenticator as stauth
 import yaml
 from yaml.loader import SafeLoader
 # --- FIM DA PARTE DE AUTENTICAÇÃO ---
-
 warnings.filterwarnings('ignore')
-
 # Configuração da página
 st.set_page_config(
     page_title="Dashboard Pós-Vendas Topema",
@@ -24,32 +21,24 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
-
 # --- INÍCIO DA PARTE DE AUTENTICAÇÃO ---
 # Carregando as credenciais do arquivo config.yaml
 with open('config_teste.yaml') as file:
     config = yaml.load(file, Loader=SafeLoader)
-
-
 # Criando o objeto authenticator
-# CORREÇÃO AQUI: O último parâmetro 'preauthorized' foi removido.
 authenticator = stauth.Authenticate(
     config['credentials'],
     config['cookie']['name'],
     config['cookie']['key'],
     config['cookie']['expiry_days']
 )
-
 # Renderizando o widget de login
 authenticator.login()
-
 if st.session_state["authentication_status"]:
     # --- FIM DA PARTE DE AUTENTICAÇÃO ---
-
     # Título principal
     st.title("🏭 Dashboard Pós-Vendas Topema")
     st.markdown("---")
-
     @st.cache_data
     def carregar_dados():
         """Carrega e processa todos os dados necessários"""
@@ -61,17 +50,14 @@ if st.session_state["authentication_status"]:
             respostas = pd.read_excel('tabela_respostas.xlsx')
             depara_etiquetas = pd.read_excel('DePara Etiquetas.xlsx')
             depara_estados = pd.read_excel('DePara Estados.xlsx')
-
             # --- FILTRAR OS TOTALMENTE ARQUIVADAS ---
             if 'archived' in atividades.columns:
                 atividades['archived'] = atividades['archived'].astype(bool)
                 status_arquivamento_por_os = atividades.groupby('order')['archived'].all()
                 os_ids_para_remover = status_arquivamento_por_os[status_arquivamento_por_os].index.tolist()
                 ordens_servico = ordens_servico[~ordens_servico['id'].isin(os_ids_para_remover)]
-
             # Filtrando apenas ordens de garantia
             ordens_servico = ordens_servico[ordens_servico['Tipo de Serviço'] == 'Garantia']
-
             # Convertendo datas e tratando timezones
             colunas_data_os = ['Criado em (UTC)', 'Atualizado em (UTC)', 'Atualizado em (Brasília)']
             for col in colunas_data_os:
@@ -79,19 +65,16 @@ if st.session_state["authentication_status"]:
                     ordens_servico[col] = pd.to_datetime(ordens_servico[col], errors='coerce')
                     if 'UTC' in col and ordens_servico[col].dt.tz is None:
                         ordens_servico[col] = ordens_servico[col].dt.tz_localize('UTC')
-
             colunas_data_ativ = ['startedAt', 'completedAt', 'createdAt', 'updatedAt', 'scheduling']
             for col in colunas_data_ativ:
                 if col in atividades.columns:
                     atividades[col] = pd.to_datetime(atividades[col], errors='coerce')
                     if atividades[col].dt.tz is None:
                         atividades[col] = atividades[col].dt.tz_localize('UTC')
-
             # Aplicando DE/PARA nos estados
             if not depara_estados.empty:
                 estado_map = dict(zip(depara_estados['DE'], depara_estados['PARA']))
                 ordens_servico['Cliente - Estado'] = ordens_servico['Cliente - Estado'].map(estado_map).fillna(ordens_servico['Cliente - Estado'])
-
             # Processando etiquetas (equipamentos)
             def processar_etiquetas(row):
                 if pd.isna(row['Etiquetas']):
@@ -104,36 +87,33 @@ if st.session_state["authentication_status"]:
                     etiquetas_processadas = etiquetas
                 return etiquetas_processadas
             ordens_servico['Etiquetas_Processadas'] = ordens_servico.apply(processar_etiquetas, axis=1)
-
-            # LÓGICA DE CONCLUSÃO DAS OS
+            # LÓGICA DE CONCLUSÃO DAS OS - AJUSTADA
             def calcular_status_os(os_id):
                 atividades_os = atividades[atividades['order'] == os_id].copy()
-                if atividades_os.empty:
+                # NOVO: filtrando apenas atividades NÃO arquivadas
+                atividades_validas = atividades_os[atividades_os['archived'] == False]
+                if atividades_validas.empty:
+                    # Essa OS já foi removida pela filtragem das totalmente arquivadas
                     return 'Sem Atividade', None, False
-                status_abertos = ['Pendente', 'Em andamento', 'Agendada', 'A caminho', 'Em Rota']
-                tem_atividade_aberta = atividades_os['status_pt'].isin(status_abertos).any()
-                if tem_atividade_aberta:
-                    ultima_atividade = atividades_os.sort_values('createdAt', ascending=False).iloc[0]
-                    ultimo_status = ultima_atividade['status_pt']
+                # A OS só estará concluída se todas as atividades válidas tiverem completedAt preenchido
+                todas_concluidas = atividades_validas['completedAt'].notna().all()
+                if todas_concluidas:
+                    status = 'Concluída'
+                    data_conclusao = atividades_validas['completedAt'].max()
+                    os_concluida = True
+                else:
+                    # Status será o da última atividade criada (entre as não arquivadas)
+                    ultima_atividade = atividades_validas.sort_values('createdAt', ascending=False).iloc[0]
+                    status = ultima_atividade['status_pt']
                     data_conclusao = None
                     os_concluida = False
-                else:
-                    os_concluida = True
-                    ultimo_status = 'Concluída'
-                    atividades_finalizadas = atividades_os[atividades_os['completedAt'].notna()]
-                    if not atividades_finalizadas.empty:
-                        data_conclusao = atividades_finalizadas['completedAt'].max()
-                    else:
-                        data_conclusao = atividades_os['updatedAt'].max()
-                return ultimo_status, data_conclusao, os_concluida
-
+                return status, data_conclusao, os_concluida
             status_info = []
             for os_id in ordens_servico['id']:
                 status, data_conclusao, concluida = calcular_status_os(os_id)
                 status_info.append({'id': os_id, 'status_final': status, 'data_conclusao': data_conclusao, 'os_concluida': concluida})
             status_df = pd.DataFrame(status_info)
             ordens_servico = ordens_servico.merge(status_df, on='id', how='left')
-
             # LÓGICA DE CORREÇÃO DE DATAS DE CRIAÇÃO
             mask_data_invalida = (ordens_servico['data_conclusao'].notna()) & (ordens_servico['Criado em (UTC)'].notna()) & (ordens_servico['data_conclusao'] < ordens_servico['Criado em (UTC)'])
             os_ids_para_corrigir = ordens_servico.loc[mask_data_invalida, 'id']
@@ -150,12 +130,10 @@ if st.session_state["authentication_status"]:
                         ordens_servico['Criado em (UTC)']
                     )
                     ordens_servico = ordens_servico.drop(columns=['data_criacao_corrigida'])
-
             # AJUSTE DE FUSO HORÁRIO PARA BRASÍLIA
             fuso_horario_br = 'America/Sao_Paulo'
             ordens_servico['Criado em'] = ordens_servico['Criado em (UTC)'].dt.tz_convert(fuso_horario_br)
             ordens_servico['data_conclusao'] = ordens_servico['data_conclusao'].dt.tz_convert(fuso_horario_br)
-
             return ordens_servico, atividades, equipamentos, respostas, depara_etiquetas, depara_estados
         except Exception as e:
             st.error(f"Erro ao carregar dados: {str(e)}")
@@ -1128,6 +1106,7 @@ if st.session_state["authentication_status"]:
     else:
         st.error("Não foi possível carregar os dados. Verifique se todos os arquivos estão na pasta correta.")
         st.info("Arquivos necessários: ordens_de_servico.xlsx, atividades.xlsx, tabela_equipamentos.xlsx, tabela_respostas.xlsx, DePara Etiquetas.xlsx, DePara Estados.xlsx")
+        
         
 # --- INÍCIO DA PARTE DE AUTENTICAÇÃO ---
 elif st.session_state["authentication_status"] is False:
