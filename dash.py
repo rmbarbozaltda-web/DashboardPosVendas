@@ -427,57 +427,279 @@ if st.session_state["authentication_status"]:
             else:
                 st.info("Nenhum equipamento encontrado para os filtros selecionados.")
 
-        # Análise de Falhas, Causas e Ações
-        st.markdown("---")
-        st.header("🔧 Análise de Falhas, Causas e Ações")
+        # --- GRÁFICO FALHA, CAUSA E AÇÃO ---
+        st.subheader("📊 Análise de Falhas, Causas e Ações Corretivas")
+        
         if 'name' in respostas.columns and 'title' in respostas.columns and 'answer' in respostas.columns:
-            respostas_base_falhas = respostas[respostas['name'].astype(str).str.contains('FALHA', case=False, na=False)].copy()
+            # Identificar coluna de vínculo
             link_column_name = None
-            if 'id_OS' in respostas_base_falhas.columns: link_column_name = 'id_OS'
-            elif 'order' in respostas_base_falhas.columns: link_column_name = 'order'
-            elif 'order.id' in respostas_base_falhas.columns: link_column_name = 'order.id'
-
+            for col_name in ['id_OS', 'order', 'order.id']:
+                if col_name in respostas.columns:
+                    link_column_name = col_name
+                    break
+            
             if link_column_name:
-                respostas_filtradas = respostas_base_falhas[respostas_base_falhas[link_column_name].isin(df_filtrado['id'])]
-                if not respostas_filtradas.empty:
-                    df_falhas = respostas_filtradas[respostas_filtradas['title'] == "QUAL A FALHA DO EQUIPAMENTO?"].copy()
-                    df_causas = respostas_filtradas[respostas_filtradas['title'].astype(str).str.contains("QUAL A CAUSA DA FALHA", case=False, na=False)].copy()
-                    perguntas_acao = ["QUAL A AÇÃO TOMADA PARA RESOLVER O PROBLEMA?", "QUAL AÇÃO FOI TOMADA?", "QUAL A AÇÃO TOMADA?"]
-                    df_acoes = respostas_filtradas[respostas_filtradas['title'].isin(perguntas_acao)].copy()
-
-                    if not df_acoes.empty:
-                        df_acoes['answer'] = df_acoes['answer'].str.split(',')
-                        df_acoes = df_acoes.explode('answer')
-                        df_acoes['answer'] = df_acoes['answer'].str.strip()
-
+                # 1. Filtrar formulários que contém "FALHA" na coluna "name"
+                formularios_falha = respostas[respostas['name'].str.contains('FALHA', case=False, na=False)]
+                
+                # Filtrar apenas as OS que estão no período selecionado
+                os_ids_filtradas = set(ordens_servico['id'].tolist())
+                formularios_falha = formularios_falha[formularios_falha[link_column_name].isin(os_ids_filtradas)]
+                
+                if not formularios_falha.empty:
+                    # 2. Localizar falhas
+                    df_falhas = formularios_falha[
+                        formularios_falha['title'].str.strip() == 'QUAL A FALHA DO EQUIPAMENTO?'
+                    ].copy()
+                    
+                    # 3. Localizar causas 
+                    df_causas = formularios_falha[
+                        formularios_falha['title'].str.contains('QUAL A CAUSA DA FALHA', case=False, na=False)
+                    ].copy()
+                    
+                    # 4. Localizar ações
+                    acoes_titles = [
+                        'QUAL A AÇÃO TOMADA PARA RESOLVER O PROBLEMA?',
+                        'QUAL AÇÃO FOI TOMADA?',
+                        'QUAL A AÇÃO TOMADA?'
+                    ]
+                    df_acoes = formularios_falha[
+                        formularios_falha['title'].isin(acoes_titles)
+                    ].copy()
+                    
+                    # Processar ações separadas por "&" - criar registros separados
+                    acoes_expandidas = []
+                    for _, row in df_acoes.iterrows():
+                        acoes = str(row['answer']).split('&')
+                        for acao in acoes:
+                            acao_limpa = acao.strip()
+                            if acao_limpa and acao_limpa.lower() != 'nan':
+                                nova_row = row.copy()
+                                nova_row['answer'] = acao_limpa
+                                acoes_expandidas.append(nova_row)
+                    
+                    if acoes_expandidas:
+                        df_acoes_processadas = pd.DataFrame(acoes_expandidas)
+                    else:
+                        df_acoes_processadas = pd.DataFrame()
+                    
+                    # Inicializar session_state para filtros se não existir
+                    if 'filtro_falha' not in st.session_state:
+                        st.session_state.filtro_falha = 'Todas'
+                    if 'filtro_causa' not in st.session_state:
+                        st.session_state.filtro_causa = 'Todas'
+                    if 'filtro_acao' not in st.session_state:
+                        st.session_state.filtro_acao = 'Todas'
+                    
+                    # Botão para limpar filtros (deve vir antes dos selectbox)
+                    if st.button("🔄 Limpar Filtros"):
+                        st.session_state.filtro_falha = 'Todas'
+                        st.session_state.filtro_causa = 'Todas'
+                        st.session_state.filtro_acao = 'Todas'
+                        st.rerun()
+                    
+                    # Filtros interativos interdependentes
+                    col_filtro1, col_filtro2, col_filtro3 = st.columns([1, 1, 1])
+                    
+                    with col_filtro1:
+                        # Filtro de Falhas (sempre mostra todas as opções disponíveis)
+                        falhas_unicas = df_falhas['answer'].dropna().unique() if not df_falhas.empty else []
+                        falhas_disponiveis = ['Todas'] + sorted([str(f) for f in falhas_unicas])
+                        
+                        falha_selecionada = st.selectbox(
+                            "🚨 Selecionar Falha:",
+                            falhas_disponiveis,
+                            index=falhas_disponiveis.index(st.session_state.filtro_falha) if st.session_state.filtro_falha in falhas_disponiveis else 0,
+                            key="select_falha"
+                        )
+                        st.session_state.filtro_falha = falha_selecionada
+                    
+                    with col_filtro2:
+                        # Filtro de Causas (limitado pelas falhas selecionadas)
+                        if falha_selecionada != 'Todas':
+                            # Buscar OS que têm a falha selecionada
+                            os_com_falha = set(df_falhas[df_falhas['answer'] == falha_selecionada][link_column_name].tolist())
+                            # Filtrar causas apenas para essas OS
+                            causas_filtradas = df_causas[df_causas[link_column_name].isin(os_com_falha)]
+                            causas_unicas = causas_filtradas['answer'].dropna().unique()
+                        else:
+                            causas_unicas = df_causas['answer'].dropna().unique() if not df_causas.empty else []
+                        
+                        causas_disponiveis = ['Todas'] + sorted([str(c) for c in causas_unicas])
+                        
+                        # Se a causa atual não está mais disponível, resetar para 'Todas'
+                        if st.session_state.filtro_causa not in causas_disponiveis:
+                            st.session_state.filtro_causa = 'Todas'
+                        
+                        causa_selecionada = st.selectbox(
+                            "🔍 Selecionar Causa:",
+                            causas_disponiveis,
+                            index=causas_disponiveis.index(st.session_state.filtro_causa) if st.session_state.filtro_causa in causas_disponiveis else 0,
+                            key="select_causa"
+                        )
+                        st.session_state.filtro_causa = causa_selecionada
+                    
+                    with col_filtro3:
+                        # Filtro de Ações (limitado pelas causas selecionadas)
+                        os_para_acoes = set(os_ids_filtradas)
+                        
+                        # Se há falha selecionada, limitar às OS com essa falha
+                        if falha_selecionada != 'Todas':
+                            os_com_falha = set(df_falhas[df_falhas['answer'] == falha_selecionada][link_column_name].tolist())
+                            os_para_acoes &= os_com_falha
+                        
+                        # Se há causa selecionada, limitar às OS com essa causa
+                        if causa_selecionada != 'Todas':
+                            os_com_causa = set(df_causas[df_causas['answer'] == causa_selecionada][link_column_name].tolist())
+                            os_para_acoes &= os_com_causa
+                        
+                        # Filtrar ações para as OS resultantes
+                        if not df_acoes_processadas.empty:
+                            acoes_filtradas = df_acoes_processadas[df_acoes_processadas[link_column_name].isin(os_para_acoes)]
+                            acoes_unicas = acoes_filtradas['answer'].dropna().unique()
+                        else:
+                            acoes_unicas = []
+                        
+                        acoes_disponiveis = ['Todas'] + sorted([str(a) for a in acoes_unicas])
+                        
+                        # Se a ação atual não está mais disponível, resetar para 'Todas'
+                        if st.session_state.filtro_acao not in acoes_disponiveis:
+                            st.session_state.filtro_acao = 'Todas'
+                        
+                        acao_selecionada = st.selectbox(
+                            "🔧 Selecionar Ação:",
+                            acoes_disponiveis,
+                            index=acoes_disponiveis.index(st.session_state.filtro_acao) if st.session_state.filtro_acao in acoes_disponiveis else 0,
+                            key="select_acao"
+                        )
+                        st.session_state.filtro_acao = acao_selecionada
+                    
+                    st.markdown("---")
+                    
+                    # Aplicar filtros aos datasets originais
+                    os_filtradas_por_criterio = set(os_ids_filtradas)
+                    
+                    if falha_selecionada != 'Todas':
+                        os_com_falha = set(df_falhas[df_falhas['answer'] == falha_selecionada][link_column_name].tolist())
+                        os_filtradas_por_criterio &= os_com_falha
+                    
+                    if causa_selecionada != 'Todas':
+                        os_com_causa = set(df_causas[df_causas['answer'] == causa_selecionada][link_column_name].tolist())
+                        os_filtradas_por_criterio &= os_com_causa
+                    
+                    if acao_selecionada != 'Todas':
+                        os_com_acao = set(df_acoes_processadas[df_acoes_processadas['answer'] == acao_selecionada][link_column_name].tolist())
+                        os_filtradas_por_criterio &= os_com_acao
+                    
+                    # Filtrar datasets pelas OS que atendem a todos os critérios
+                    df_falhas_filtrado = df_falhas[df_falhas[link_column_name].isin(os_filtradas_por_criterio)]
+                    df_causas_filtrado = df_causas[df_causas[link_column_name].isin(os_filtradas_por_criterio)]
+                    df_acoes_filtrado = df_acoes_processadas[df_acoes_processadas[link_column_name].isin(os_filtradas_por_criterio)]
+                    
+                    # Gráficos independentes
                     col1, col2, col3 = st.columns(3)
+                    
                     with col1:
-                        st.subheader("Top 10 Falhas")
-                        if not df_falhas.empty:
-                            falhas_counts = df_falhas['answer'].value_counts().head(10)
-                            fig = px.bar(y=falhas_counts.index, x=falhas_counts.values, orientation='h', text=falhas_counts.values)
-                            fig.update_layout(yaxis={'categoryorder':'total ascending'}, height=500, xaxis_title="Quantidade", yaxis_title="")
-                            st.plotly_chart(fig, use_container_width=True)
+                        st.subheader("🚨 Top 10 Falhas")
+                        if not df_falhas_filtrado.empty:
+                            falhas_counts = df_falhas_filtrado['answer'].value_counts().head(10)
+                            
+                            if not falhas_counts.empty:
+                                fig_falhas = px.bar(
+                                    y=falhas_counts.index,
+                                    x=falhas_counts.values,
+                                    orientation='h',
+                                    text=falhas_counts.values,
+                                    title=f"Total de Respostas: {falhas_counts.sum()}"
+                                )
+                                fig_falhas.update_layout(
+                                    yaxis={'categoryorder':'total ascending'},
+                                    height=500,
+                                    xaxis_title="Quantidade",
+                                    yaxis_title="",
+                                    showlegend=False
+                                )
+                                fig_falhas.update_traces(textposition='outside')
+                                st.plotly_chart(fig_falhas, use_container_width=True)
+                            else:
+                                st.info("Nenhuma falha encontrada.")
                         else:
-                            st.info("Nenhuma falha identificada.")
+                            st.info("Nenhuma falha encontrada com os filtros aplicados.")
+                    
                     with col2:
-                        st.subheader("Top 10 Causas")
-                        if not df_causas.empty:
-                            causas_counts = df_causas['answer'].value_counts().head(10)
-                            fig = px.bar(y=causas_counts.index, x=causas_counts.values, orientation='h', text=causas_counts.values)
-                            fig.update_layout(yaxis={'categoryorder':'total ascending'}, height=500, xaxis_title="Quantidade", yaxis_title="")
-                            st.plotly_chart(fig, use_container_width=True)
+                        st.subheader("🔍 Top 10 Causas")
+                        if not df_causas_filtrado.empty:
+                            causas_counts = df_causas_filtrado['answer'].value_counts().head(10)
+                            
+                            if not causas_counts.empty:
+                                fig_causas = px.bar(
+                                    y=causas_counts.index,
+                                    x=causas_counts.values,
+                                    orientation='h',
+                                    text=causas_counts.values,
+                                    title=f"Total de Respostas: {causas_counts.sum()}"
+                                )
+                                fig_causas.update_layout(
+                                    yaxis={'categoryorder':'total ascending'},
+                                    height=500,
+                                    xaxis_title="Quantidade",
+                                    yaxis_title="",
+                                    showlegend=False
+                                )
+                                fig_causas.update_traces(textposition='outside')
+                                st.plotly_chart(fig_causas, use_container_width=True)
+                            else:
+                                st.info("Nenhuma causa encontrada.")
                         else:
-                            st.info("Nenhuma causa identificada.")
+                            st.info("Nenhuma causa encontrada com os filtros aplicados.")
+                    
                     with col3:
-                        st.subheader("Top 10 Ações Corretivas")
-                        if not df_acoes.empty:
-                            acoes_counts = df_acoes['answer'].value_counts().head(10)
-                            fig = px.bar(y=acoes_counts.index, x=acoes_counts.values, orientation='h', text=acoes_counts.values)
-                            fig.update_layout(yaxis={'categoryorder':'total ascending'}, height=500, xaxis_title="Quantidade", yaxis_title="")
-                            st.plotly_chart(fig, use_container_width=True)
+                        st.subheader("🔧 Top 10 Ações Corretivas")
+                        if not df_acoes_filtrado.empty:
+                            acoes_counts = df_acoes_filtrado['answer'].value_counts().head(10)
+                            
+                            if not acoes_counts.empty:
+                                fig_acoes = px.bar(
+                                    y=acoes_counts.index,
+                                    x=acoes_counts.values,
+                                    orientation='h',
+                                    text=acoes_counts.values,
+                                    title=f"Total de Respostas: {acoes_counts.sum()}"
+                                )
+                                fig_acoes.update_layout(
+                                    yaxis={'categoryorder':'total ascending'},
+                                    height=500,
+                                    xaxis_title="Quantidade",
+                                    yaxis_title="",
+                                    showlegend=False
+                                )
+                                fig_acoes.update_traces(textposition='outside')
+                                st.plotly_chart(fig_acoes, use_container_width=True)
+                            else:
+                                st.info("Nenhuma ação encontrada.")
                         else:
-                            st.info("Nenhuma ação identificada.")
+                            st.info("Nenhuma ação encontrada com os filtros aplicados.")
+                    
+                    # Resumo dos filtros aplicados
+                    filtros_ativos = []
+                    if falha_selecionada != 'Todas':
+                        filtros_ativos.append(f"Falha: {falha_selecionada}")
+                    if causa_selecionada != 'Todas':
+                        filtros_ativos.append(f"Causa: {causa_selecionada}")
+                    if acao_selecionada != 'Todas':
+                        filtros_ativos.append(f"Ação: {acao_selecionada}")
+                    
+                    if filtros_ativos:
+                        st.info(f"🔍 **Filtros Aplicados:** {' | '.join(filtros_ativos)}")
+                        
+                    # Debug info (remova depois de testar)
+                    if st.checkbox("🔍 Mostrar informações de debug"):
+                        st.write("**Total de respostas de falha encontradas:**", len(df_falhas))
+                        st.write("**Total de respostas de causa encontradas:**", len(df_causas))
+                        st.write("**Total de respostas de ação encontradas:**", len(df_acoes_processadas))
+                        st.write("**OS filtradas pelo período:**", len(os_ids_filtradas))
+                        st.write("**OS filtradas pelos critérios:**", len(os_filtradas_por_criterio))
+                        
                 else:
                     st.info("Nenhum formulário de falha encontrado para as OS filtradas.")
             else:
