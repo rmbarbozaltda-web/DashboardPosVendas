@@ -429,7 +429,6 @@ if st.session_state["authentication_status"]:
 
         # --- GRÁFICO FALHA, CAUSA E AÇÃO ---
         st.subheader("📊 Análise de Falhas, Causas e Ações Corretivas")
-        
         if 'name' in respostas.columns and 'title' in respostas.columns and 'answer' in respostas.columns:
             # Identificar coluna de vínculo
             link_column_name = None
@@ -437,26 +436,21 @@ if st.session_state["authentication_status"]:
                 if col_name in respostas.columns:
                     link_column_name = col_name
                     break
-            
             if link_column_name:
                 # 1. Filtrar formulários que contém "FALHA" na coluna "name"
                 formularios_falha = respostas[respostas['name'].str.contains('FALHA', case=False, na=False)]
-                
                 # Filtrar apenas as OS que estão no período selecionado
                 os_ids_filtradas = set(ordens_servico['id'].tolist())
                 formularios_falha = formularios_falha[formularios_falha[link_column_name].isin(os_ids_filtradas)]
-                
                 if not formularios_falha.empty:
                     # 2. Localizar falhas
                     df_falhas = formularios_falha[
                         formularios_falha['title'].str.strip() == 'QUAL A FALHA DO EQUIPAMENTO?'
                     ].copy()
-                    
-                    # 3. Localizar causas 
+                    # 3. Localizar causas
                     df_causas = formularios_falha[
                         formularios_falha['title'].str.contains('QUAL A CAUSA DA FALHA', case=False, na=False)
                     ].copy()
-                    
                     # 4. Localizar ações
                     acoes_titles = [
                         'QUAL A AÇÃO TOMADA PARA RESOLVER O PROBLEMA?',
@@ -466,7 +460,6 @@ if st.session_state["authentication_status"]:
                     df_acoes = formularios_falha[
                         formularios_falha['title'].isin(acoes_titles)
                     ].copy()
-                    
                     # Processar ações separadas por "&" - criar registros separados
                     acoes_expandidas = []
                     for _, row in df_acoes.iterrows():
@@ -477,12 +470,10 @@ if st.session_state["authentication_status"]:
                                 nova_row = row.copy()
                                 nova_row['answer'] = acao_limpa
                                 acoes_expandidas.append(nova_row)
-                    
                     if acoes_expandidas:
                         df_acoes_processadas = pd.DataFrame(acoes_expandidas)
                     else:
                         df_acoes_processadas = pd.DataFrame()
-                    
                     # Inicializar session_state para filtros se não existir
                     if 'filtro_falha' not in st.session_state:
                         st.session_state.filtro_falha = 'Todas'
@@ -490,22 +481,18 @@ if st.session_state["authentication_status"]:
                         st.session_state.filtro_causa = 'Todas'
                     if 'filtro_acao' not in st.session_state:
                         st.session_state.filtro_acao = 'Todas'
-                    
                     # Botão para limpar filtros (deve vir antes dos selectbox)
                     if st.button("🔄 Limpar Filtros"):
                         st.session_state.filtro_falha = 'Todas'
                         st.session_state.filtro_causa = 'Todas'
                         st.session_state.filtro_acao = 'Todas'
                         st.rerun()
-                    
                     # Filtros interativos interdependentes
                     col_filtro1, col_filtro2, col_filtro3 = st.columns([1, 1, 1])
-                    
                     with col_filtro1:
                         # Filtro de Falhas (sempre mostra todas as opções disponíveis)
                         falhas_unicas = df_falhas['answer'].dropna().unique() if not df_falhas.empty else []
                         falhas_disponiveis = ['Todas'] + sorted([str(f) for f in falhas_unicas])
-                        
                         falha_selecionada = st.selectbox(
                             "🚨 Selecionar Falha:",
                             falhas_disponiveis,
@@ -513,7 +500,6 @@ if st.session_state["authentication_status"]:
                             key="select_falha"
                         )
                         st.session_state.filtro_falha = falha_selecionada
-                    
                     with col_filtro2:
                         # Filtro de Causas (limitado pelas falhas selecionadas)
                         if falha_selecionada != 'Todas':
@@ -524,13 +510,10 @@ if st.session_state["authentication_status"]:
                             causas_unicas = causas_filtradas['answer'].dropna().unique()
                         else:
                             causas_unicas = df_causas['answer'].dropna().unique() if not df_causas.empty else []
-                        
                         causas_disponiveis = ['Todas'] + sorted([str(c) for c in causas_unicas])
-                        
                         # Se a causa atual não está mais disponível, resetar para 'Todas'
                         if st.session_state.filtro_causa not in causas_disponiveis:
                             st.session_state.filtro_causa = 'Todas'
-                        
                         causa_selecionada = st.selectbox(
                             "🔍 Selecionar Causa:",
                             causas_disponiveis,
@@ -538,34 +521,27 @@ if st.session_state["authentication_status"]:
                             key="select_causa"
                         )
                         st.session_state.filtro_causa = causa_selecionada
-                    
                     with col_filtro3:
                         # Filtro de Ações (limitado pelas causas selecionadas)
                         os_para_acoes = set(os_ids_filtradas)
-                        
                         # Se há falha selecionada, limitar às OS com essa falha
                         if falha_selecionada != 'Todas':
                             os_com_falha = set(df_falhas[df_falhas['answer'] == falha_selecionada][link_column_name].tolist())
                             os_para_acoes &= os_com_falha
-                        
                         # Se há causa selecionada, limitar às OS com essa causa
                         if causa_selecionada != 'Todas':
                             os_com_causa = set(df_causas[df_causas['answer'] == causa_selecionada][link_column_name].tolist())
                             os_para_acoes &= os_com_causa
-                        
                         # Filtrar ações para as OS resultantes
                         if not df_acoes_processadas.empty:
                             acoes_filtradas = df_acoes_processadas[df_acoes_processadas[link_column_name].isin(os_para_acoes)]
                             acoes_unicas = acoes_filtradas['answer'].dropna().unique()
                         else:
                             acoes_unicas = []
-                        
                         acoes_disponiveis = ['Todas'] + sorted([str(a) for a in acoes_unicas])
-                        
                         # Se a ação atual não está mais disponível, resetar para 'Todas'
                         if st.session_state.filtro_acao not in acoes_disponiveis:
                             st.session_state.filtro_acao = 'Todas'
-                        
                         acao_selecionada = st.selectbox(
                             "🔧 Selecionar Ação:",
                             acoes_disponiveis,
@@ -573,37 +549,28 @@ if st.session_state["authentication_status"]:
                             key="select_acao"
                         )
                         st.session_state.filtro_acao = acao_selecionada
-                    
                     st.markdown("---")
-                    
                     # Aplicar filtros aos datasets originais
                     os_filtradas_por_criterio = set(os_ids_filtradas)
-                    
                     if falha_selecionada != 'Todas':
                         os_com_falha = set(df_falhas[df_falhas['answer'] == falha_selecionada][link_column_name].tolist())
                         os_filtradas_por_criterio &= os_com_falha
-                    
                     if causa_selecionada != 'Todas':
                         os_com_causa = set(df_causas[df_causas['answer'] == causa_selecionada][link_column_name].tolist())
                         os_filtradas_por_criterio &= os_com_causa
-                    
                     if acao_selecionada != 'Todas':
                         os_com_acao = set(df_acoes_processadas[df_acoes_processadas['answer'] == acao_selecionada][link_column_name].tolist())
                         os_filtradas_por_criterio &= os_com_acao
-                    
                     # Filtrar datasets pelas OS que atendem a todos os critérios
                     df_falhas_filtrado = df_falhas[df_falhas[link_column_name].isin(os_filtradas_por_criterio)]
                     df_causas_filtrado = df_causas[df_causas[link_column_name].isin(os_filtradas_por_criterio)]
                     df_acoes_filtrado = df_acoes_processadas[df_acoes_processadas[link_column_name].isin(os_filtradas_por_criterio)]
-                    
                     # Gráficos independentes
                     col1, col2, col3 = st.columns(3)
-                    
                     with col1:
                         st.subheader("🚨 Top 10 Falhas")
                         if not df_falhas_filtrado.empty:
                             falhas_counts = df_falhas_filtrado['answer'].value_counts().head(10)
-                            
                             if not falhas_counts.empty:
                                 fig_falhas = px.bar(
                                     y=falhas_counts.index,
@@ -617,20 +584,27 @@ if st.session_state["authentication_status"]:
                                     height=500,
                                     xaxis_title="Quantidade",
                                     yaxis_title="",
-                                    showlegend=False
+                                    showlegend=False,
+                                    margin=dict(l=20, r=100, t=60, b=40)
                                 )
-                                fig_falhas.update_traces(textposition='outside')
+                                # Calcular range adequado para o eixo X
+                                max_val = falhas_counts.max()
+                                fig_falhas.update_xaxes(range=[0, max_val * 1.25])
+                                
+                                # Configurar texto das barras
+                                fig_falhas.update_traces(
+                                    textposition='outside',
+                                    textfont_size=12
+                                )
                                 st.plotly_chart(fig_falhas, use_container_width=True)
                             else:
                                 st.info("Nenhuma falha encontrada.")
                         else:
                             st.info("Nenhuma falha encontrada com os filtros aplicados.")
-                    
                     with col2:
                         st.subheader("🔍 Top 10 Causas")
                         if not df_causas_filtrado.empty:
                             causas_counts = df_causas_filtrado['answer'].value_counts().head(10)
-                            
                             if not causas_counts.empty:
                                 fig_causas = px.bar(
                                     y=causas_counts.index,
@@ -644,20 +618,27 @@ if st.session_state["authentication_status"]:
                                     height=500,
                                     xaxis_title="Quantidade",
                                     yaxis_title="",
-                                    showlegend=False
+                                    showlegend=False,
+                                    margin=dict(l=20, r=100, t=60, b=40)
                                 )
-                                fig_causas.update_traces(textposition='outside')
+                                # Calcular range adequado para o eixo X
+                                max_val = causas_counts.max()
+                                fig_causas.update_xaxes(range=[0, max_val * 1.25])
+                                
+                                # Configurar texto das barras
+                                fig_causas.update_traces(
+                                    textposition='outside',
+                                    textfont_size=12
+                                )
                                 st.plotly_chart(fig_causas, use_container_width=True)
                             else:
                                 st.info("Nenhuma causa encontrada.")
                         else:
                             st.info("Nenhuma causa encontrada com os filtros aplicados.")
-                    
                     with col3:
                         st.subheader("🔧 Top 10 Ações Corretivas")
                         if not df_acoes_filtrado.empty:
                             acoes_counts = df_acoes_filtrado['answer'].value_counts().head(10)
-                            
                             if not acoes_counts.empty:
                                 fig_acoes = px.bar(
                                     y=acoes_counts.index,
@@ -671,15 +652,23 @@ if st.session_state["authentication_status"]:
                                     height=500,
                                     xaxis_title="Quantidade",
                                     yaxis_title="",
-                                    showlegend=False
+                                    showlegend=False,
+                                    margin=dict(l=20, r=100, t=60, b=40)
                                 )
-                                fig_acoes.update_traces(textposition='outside')
+                                # Calcular range adequado para o eixo X
+                                max_val = acoes_counts.max()
+                                fig_acoes.update_xaxes(range=[0, max_val * 1.25])
+                                
+                                # Configurar texto das barras
+                                fig_acoes.update_traces(
+                                    textposition='outside',
+                                    textfont_size=12
+                                )
                                 st.plotly_chart(fig_acoes, use_container_width=True)
                             else:
                                 st.info("Nenhuma ação encontrada.")
                         else:
                             st.info("Nenhuma ação encontrada com os filtros aplicados.")
-                    
                     # Resumo dos filtros aplicados
                     filtros_ativos = []
                     if falha_selecionada != 'Todas':
@@ -688,10 +677,8 @@ if st.session_state["authentication_status"]:
                         filtros_ativos.append(f"Causa: {causa_selecionada}")
                     if acao_selecionada != 'Todas':
                         filtros_ativos.append(f"Ação: {acao_selecionada}")
-                    
                     if filtros_ativos:
                         st.info(f"🔍 **Filtros Aplicados:** {' | '.join(filtros_ativos)}")
-                        
                     # Debug info (remova depois de testar)
                     if st.checkbox("🔍 Mostrar informações de debug"):
                         st.write("**Total de respostas de falha encontradas:**", len(df_falhas))
@@ -699,7 +686,6 @@ if st.session_state["authentication_status"]:
                         st.write("**Total de respostas de ação encontradas:**", len(df_acoes_processadas))
                         st.write("**OS filtradas pelo período:**", len(os_ids_filtradas))
                         st.write("**OS filtradas pelos critérios:**", len(os_filtradas_por_criterio))
-                        
                 else:
                     st.info("Nenhum formulário de falha encontrado para as OS filtradas.")
             else:
