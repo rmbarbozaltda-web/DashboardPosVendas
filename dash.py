@@ -594,7 +594,7 @@ if st.session_state["authentication_status"]:
                                 # Configurar texto das barras
                                 fig_falhas.update_traces(
                                     textposition='outside',
-                                    textfont_size=12
+                                    textfont_size=10
                                 )
                                 st.plotly_chart(fig_falhas, use_container_width=True)
                             else:
@@ -628,7 +628,7 @@ if st.session_state["authentication_status"]:
                                 # Configurar texto das barras
                                 fig_causas.update_traces(
                                     textposition='outside',
-                                    textfont_size=12
+                                    textfont_size=10
                                 )
                                 st.plotly_chart(fig_causas, use_container_width=True)
                             else:
@@ -662,7 +662,7 @@ if st.session_state["authentication_status"]:
                                 # Configurar texto das barras
                                 fig_acoes.update_traces(
                                     textposition='outside',
-                                    textfont_size=12
+                                    textfont_size=10
                                 )
                                 st.plotly_chart(fig_acoes, use_container_width=True)
                             else:
