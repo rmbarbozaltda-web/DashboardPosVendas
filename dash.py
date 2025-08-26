@@ -1161,7 +1161,7 @@ if st.session_state["authentication_status"]:
             st.info(f"Nenhuma atividade agendada para o dia {data_agenda.strftime('%d/%m/%Y')}.")
         st.markdown("---")
 
-                        # --- INDICADORES DE AVALIAÇÃO DE ATENDIMENTO ---
+                                # --- INDICADORES DE AVALIAÇÃO DE ATENDIMENTO ---
         # Merge atividades para trazer 'order' e colaborador
         atividades_aux = atividades[['id', 'order', 'colaborador_nome']]
         avaliacoes_com_order = pd.merge(
@@ -1174,10 +1174,12 @@ if st.session_state["authentication_status"]:
         # Filtra avaliações apenas das OS filtradas
         avaliacoes_filtradas = avaliacoes_com_order[avaliacoes_com_order['order'].isin(df_filtrado['id'])].copy()
         avaliacoes_filtradas['createdAt'] = pd.to_datetime(avaliacoes_filtradas['createdAt'], errors='coerce')
+
         # Indicadores gerais
         nota_media_geral = avaliacoes_filtradas['stars'].mean()
         total_avaliacoes = avaliacoes_filtradas.shape[0]
         distribuicao_notas = avaliacoes_filtradas['stars'].value_counts(normalize=True).sort_index() * 100
+
         # --- RANKING de técnicos visual: posição + emoji na MESMA coluna + quantidade de avaliações, com empates ---
         ranking_colaboradores = (
             avaliacoes_filtradas
@@ -1186,6 +1188,7 @@ if st.session_state["authentication_status"]:
             .reset_index()
         )
         ranking_colaboradores.columns = ['Técnico', 'Nota Média', 'Avaliações']
+
         # Ranking com empate (dense ranking), e emoji junto com posição
         ranking_colaboradores['PosiçãoNum'] = ranking_colaboradores['Nota Média'].rank(method='min', ascending=False).astype(int)
         def get_icone(posnum):
@@ -1200,6 +1203,7 @@ if st.session_state["authentication_status"]:
             [['Posição', 'Técnico', 'Nota Média', 'Avaliações']]
             .reset_index(drop=True)
         )
+
         # --- Evolução mensal, garantindo sempre x como string ---
         if not avaliacoes_filtradas.empty and avaliacoes_filtradas['createdAt'].notnull().any():
             avaliacoes_filtradas['mes_ano'] = avaliacoes_filtradas['createdAt'].dt.strftime('%Y-%m')
@@ -1210,17 +1214,27 @@ if st.session_state["authentication_status"]:
                 .sort_index()
             )
         else:
-            # Dados sintéticos para manter layout
             evolucao_nota = pd.Series([], dtype=float)
-        # Comentários recentes (AGORA COM DATA FORMATADA)
+
+        # Comentários recentes (DATA FORMATADA + ESTRELAS CHEIAS E VAZIAS)
         comentarios_recentes = avaliacoes_filtradas[['createdAt', 'colaborador_nome', 'stars', 'comment']]
         comentarios_recentes = comentarios_recentes.sort_values('createdAt', ascending=False).head(10)
         comentarios_recentes['Data'] = comentarios_recentes['createdAt'].dt.strftime('%d/%m/%Y %H:%M:%S')
+
+        # Função nota em estrelas cheias e vazias
+        def estrelas_icone(star):
+            try:
+                n = int(star)
+                return '⭐' * n + '☆' * (5 - n)
+            except:
+                return ''
+
+        comentarios_recentes['Estrelas'] = comentarios_recentes['stars'].apply(estrelas_icone)
         comentarios_recentes = comentarios_recentes.rename(columns={
             'colaborador_nome': 'Técnico',
-            'stars': 'Estrelas',
             'comment': 'Comentário'
         })[['Data', 'Técnico', 'Estrelas', 'Comentário']]
+
         # --- EXIBIÇÃO STREAMLIT ---
         st.markdown("## ⭐ Indicadores de Avaliação de Atendimento")
         col1, col2, col3 = st.columns(3)
@@ -1240,7 +1254,6 @@ if st.session_state["authentication_status"]:
         st.dataframe(comentarios_recentes, hide_index=True, use_container_width=True)
 
         st.markdown("---")
-
 
         # Tabela resumo
         st.header("📋 Tabela Resumo das OS")
