@@ -7,6 +7,7 @@ import equipamentosOs
 import formularios
 import respostas
 import orcamentos
+import avaliacao
 
 def main():
     print("Iniciando a atualização dos dados...")
@@ -34,6 +35,10 @@ def main():
     orcamentos.gerar_arquivo_orcamentos()
     # CORREÇÃO: Mensagem de log ajustada para o arquivo correto
     print("✅ Arquivo 'orcamentos.xlsx' atualizado.") # Ajuste o nome do arquivo se for diferente
+
+    avaliacao.get_all_ratings()
+    # CORREÇÃO: Mensagem de log ajustada para o arquivo correto
+    print("✅ Arquivo 'avaliacoes_garantia.xlsx' atualizado.") # Ajuste o nome do arquivo se for diferente
 
     print("\n🎉 Todos os arquivos de dados foram atualizados com sucesso!")
 
