@@ -50,6 +50,7 @@ if st.session_state["authentication_status"]:
             respostas = pd.read_excel('tabela_respostas.xlsx')
             depara_etiquetas = pd.read_excel('DePara Etiquetas.xlsx')
             depara_estados = pd.read_excel('DePara Estados.xlsx')
+            avaliacoes_garantia = pd.read_excel('avaliacoes_garantia.xlsx')
             # --- FILTRAR OS TOTALMENTE ARQUIVADAS ---
             if 'archived' in atividades.columns:
                 atividades['archived'] = atividades['archived'].astype(bool)
@@ -134,13 +135,13 @@ if st.session_state["authentication_status"]:
             fuso_horario_br = 'America/Sao_Paulo'
             ordens_servico['Criado em'] = ordens_servico['Criado em (UTC)'].dt.tz_convert(fuso_horario_br)
             ordens_servico['data_conclusao'] = ordens_servico['data_conclusao'].dt.tz_convert(fuso_horario_br)
-            return ordens_servico, atividades, equipamentos, respostas, depara_etiquetas, depara_estados
+            return ordens_servico, atividades, equipamentos, respostas, depara_etiquetas, depara_estados,avaliacoes_garantia
         except Exception as e:
             st.error(f"Erro ao carregar dados: {str(e)}")
-            return None, None, None, None, None, None
+            return None, None, None, None, None, None, None
 
     # Carregando os dados
-    ordens_servico, atividades, equipamentos, respostas, depara_etiquetas, depara_estados = carregar_dados()
+    ordens_servico, atividades, equipamentos, respostas, depara_etiquetas, depara_estados, avaliacoes_garantia = carregar_dados()
 
     if ordens_servico is not None:
 
