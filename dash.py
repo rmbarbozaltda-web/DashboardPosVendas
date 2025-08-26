@@ -1107,14 +1107,12 @@ if st.session_state["authentication_status"]:
             agenda_df['rating_link'] = agenda_df['ratingLink'].apply(link_estrela)
 
             # Seleciona só as colunas que existem
-            cols_necessarios = ['scheduling', 'Cliente', 'colaborador_nome', 'Numero OS', 'map_url', 'rating_link',
-                                'stars', 'comment', 'createdAt']
+            cols_necessarios = ['scheduling', 'Cliente', 'colaborador_nome', 'Numero OS', 'map_url', 'rating_link']
             cols_existentes = [c for c in cols_necessarios if c in agenda_df.columns]
             agenda_display = agenda_df[cols_existentes].copy()
 
             # Renomeia colunas para exibição, só até o número existente!
-            nomes_exibicao = ['Horário', 'Cliente', 'Técnico', 'Número OS', 'Localização', 'Link Avaliação',
-                            'Estrelas', 'Comentário', 'Data Avaliação']
+            nomes_exibicao = ['Horário', 'Cliente', 'Técnico', 'Número OS', 'Localização', 'Link Avaliação']
             agenda_display.columns = nomes_exibicao[:len(agenda_display.columns)]
 
             if 'Horário' in agenda_display.columns:
@@ -1161,26 +1159,42 @@ if st.session_state["authentication_status"]:
             st.info(f"Nenhuma atividade agendada para o dia {data_agenda.strftime('%d/%m/%Y')}.")
         st.markdown("---")
 
-                                # --- INDICADORES DE AVALIAÇÃO DE ATENDIMENTO ---
-        # Merge atividades para trazer 'order' e colaborador
-        atividades_aux = atividades[['id', 'order', 'colaborador_nome']]
+                    # --- INDICADORES DE AVALIAÇÃO DE ATENDIMENTO ---
+
+        # 1. CARREGUE as ordens de serviço, GARANTA o nome certo da coluna do número OS!
+        # ordens_servico = pd.read_excel('ordens_de_servico.xlsx')
+        # print(ordens_servico.columns) # Descomente para conferir o nome real da coluna B!
+        # Exemplo: coluna B chama-se 'Numero OS' (mude abaixo se o nome for outro!)
+
+        # 2. Merge atividades para trazer 'order', colaborador e NÚMERO da OS
+        atividades_aux = atividades[['id', 'order', 'colaborador_nome']].merge(
+            ordens_servico[['id', 'Numero OS']],  # <-- AJUSTE aqui 'Numero OS' se for outro nome!
+            left_on='order',
+            right_on='id',
+            how='left',
+            suffixes=('', '_os'),
+        )
+
+        # 3. Merge avaliações com atividades (agora já temos colaborador_nome e Numero OS)
         avaliacoes_com_order = pd.merge(
             avaliacoes_garantia,
-            atividades_aux,
+            atividades_aux[['id', 'order', 'colaborador_nome', 'Numero OS']],
             left_on='task.id',
             right_on='id',
             how='left'
         )
-        # Filtra avaliações apenas das OS filtradas
+
+        # 4. Filtra avaliações apenas das OS filtradas
         avaliacoes_filtradas = avaliacoes_com_order[avaliacoes_com_order['order'].isin(df_filtrado['id'])].copy()
         avaliacoes_filtradas['createdAt'] = pd.to_datetime(avaliacoes_filtradas['createdAt'], errors='coerce')
 
-        # Indicadores gerais
+        # 5. Indicadores gerais
         nota_media_geral = avaliacoes_filtradas['stars'].mean()
         total_avaliacoes = avaliacoes_filtradas.shape[0]
         distribuicao_notas = avaliacoes_filtradas['stars'].value_counts(normalize=True).sort_index() * 100
 
-        # --- RANKING de técnicos visual: posição + emoji na MESMA coluna + quantidade de avaliações, com empates ---
+        # --- RANKING de técnicos visual: posição + emoji na MESMA coluna + quantidade de avaliações, com empate por média/avalições ---
+
         ranking_colaboradores = (
             avaliacoes_filtradas
             .groupby('colaborador_nome')
@@ -1189,20 +1203,25 @@ if st.session_state["authentication_status"]:
         )
         ranking_colaboradores.columns = ['Técnico', 'Nota Média', 'Avaliações']
 
-        # Ranking com empate (dense ranking), e emoji junto com posição
-        ranking_colaboradores['PosiçãoNum'] = ranking_colaboradores['Nota Média'].rank(method='min', ascending=False).astype(int)
+        # NOVA ORDENAÇÃO: primeiro por Nota Média (desc), depois Avaliações (desc), depois nome (asc, só para ordenação estável)
+        ranking_colaboradores = ranking_colaboradores.sort_values(
+            by=['Nota Média', 'Avaliações', 'Técnico'],
+            ascending=[False, False, True]
+        ).reset_index(drop=True)
+
+        # Ranking numérico: empate considerando os dois critérios
+        ranking_colaboradores['PosiçãoNum'] = ranking_colaboradores[['Nota Média', 'Avaliações']].apply(
+            lambda x: tuple(x), axis=1
+        ).rank(method='min', ascending=False).astype(int)
+
         def get_icone(posnum):
             if posnum == 1: return '🏆'
             if posnum == 2: return '🥈'
             if posnum == 3: return '🥉'
             return ''
+
         ranking_colaboradores['Posição'] = ranking_colaboradores['PosiçãoNum'].astype(str) + 'º ' + ranking_colaboradores['PosiçãoNum'].apply(get_icone)
-        ranking_colaboradores = (
-            ranking_colaboradores
-            .sort_values(by=['Nota Média', 'Técnico'], ascending=[False, True])
-            [['Posição', 'Técnico', 'Nota Média', 'Avaliações']]
-            .reset_index(drop=True)
-        )
+        ranking_colaboradores = ranking_colaboradores[['Posição', 'Técnico', 'Nota Média', 'Avaliações']]
 
         # --- Evolução mensal, garantindo sempre x como string ---
         if not avaliacoes_filtradas.empty and avaliacoes_filtradas['createdAt'].notnull().any():
@@ -1216,8 +1235,8 @@ if st.session_state["authentication_status"]:
         else:
             evolucao_nota = pd.Series([], dtype=float)
 
-        # Comentários recentes (DATA FORMATADA + ESTRELAS CHEIAS E VAZIAS)
-        comentarios_recentes = avaliacoes_filtradas[['createdAt', 'colaborador_nome', 'stars', 'comment']]
+        # --- Comentários recentes (DATA FORMATADA + ESTRELAS + NÚMERO REAL OS) ---
+        comentarios_recentes = avaliacoes_filtradas[['createdAt', 'Numero OS', 'colaborador_nome', 'stars', 'comment']]
         comentarios_recentes = comentarios_recentes.sort_values('createdAt', ascending=False).head(10)
         comentarios_recentes['Data'] = comentarios_recentes['createdAt'].dt.strftime('%d/%m/%Y %H:%M:%S')
 
@@ -1231,9 +1250,10 @@ if st.session_state["authentication_status"]:
 
         comentarios_recentes['Estrelas'] = comentarios_recentes['stars'].apply(estrelas_icone)
         comentarios_recentes = comentarios_recentes.rename(columns={
+            'Numero OS': 'Nº OS',  # <- AGORA mostra o número REAL da OS
             'colaborador_nome': 'Técnico',
             'comment': 'Comentário'
-        })[['Data', 'Técnico', 'Estrelas', 'Comentário']]
+        })[['Data', 'Nº OS', 'Técnico', 'Estrelas', 'Comentário']]
 
         # --- EXIBIÇÃO STREAMLIT ---
         st.markdown("## ⭐ Indicadores de Avaliação de Atendimento")
@@ -1252,6 +1272,8 @@ if st.session_state["authentication_status"]:
             st.info("Ainda não há avaliações mensais para exibir este gráfico.")
         st.markdown("### Comentários Recentes dos Clientes")
         st.dataframe(comentarios_recentes, hide_index=True, use_container_width=True)
+
+
 
         st.markdown("---")
 
