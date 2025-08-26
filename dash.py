@@ -1055,7 +1055,6 @@ if st.session_state["authentication_status"]:
             fuso_horario_br = 'America/Sao_Paulo'
             data_selecionada_tz = pd.Timestamp(data_agenda, tz=fuso_horario_br)
             atividades_do_dia = atividades_agendadas[atividades_agendadas['scheduling'].dt.date == data_selecionada_tz.date()]
-
             if not atividades_do_dia.empty:
                 agenda_df = pd.merge(
                     atividades_do_dia,
@@ -1066,17 +1065,33 @@ if st.session_state["authentication_status"]:
                 )
                 agenda_df.dropna(subset=['Numero OS'], inplace=True)
 
+                # Link do mapa
                 def criar_url_mapa(coords):
                     if pd.notna(coords) and isinstance(coords, str) and ',' in coords:
                         coords_limpas = coords.replace(" ", "")
                         return f"https://www.google.com/maps/search/?api=1&query={coords_limpas}"
                     return None
-                agenda_df['map_url'] = agenda_df['coords'].apply(criar_url_mapa)
 
-                agenda_display = agenda_df[['scheduling', 'colaborador_nome', 'map_url', 'Numero OS', 'Cliente']].copy()
-                agenda_display.columns = ['Horário', 'Técnico', 'Localização', 'Número OS', 'Cliente']
+                # Para link da avaliação: Retorna emoji estrela quando houver link, senão retorna None
+                def link_estrela(link):
+                    if pd.notna(link) and isinstance(link, str) and link.strip():
+                        return link  # O endereço será usado no LinkColumn!
+                    return None
+
+                def display_text_estrela(link):
+                    if pd.notna(link) and isinstance(link, str) and link.strip():
+                        return "⭐"
+                    return ""
+
+                agenda_df['map_url'] = agenda_df['coords'].apply(criar_url_mapa)
+                agenda_df['rating_link'] = agenda_df['ratingLink'].apply(link_estrela)
+                agenda_df['estrela_exibir'] = agenda_df['ratingLink'].apply(display_text_estrela)
+
+                agenda_display = agenda_df[['scheduling', 'Cliente', 'colaborador_nome','Numero OS', 'map_url',  'rating_link']].copy()
+                agenda_display.columns = ['Horário', 'Cliente','Técnico','Número OS', 'Localização',   'Link Avaliação']
                 agenda_display = agenda_display.sort_values(by='Horário')
 
+                # Mostra a tabela com o LinkColumn para ambas as colunas interativas!
                 st.dataframe(
                     agenda_display,
                     column_config={
@@ -1088,17 +1103,23 @@ if st.session_state["authentication_status"]:
                             "Localização",
                             help="Clique para abrir o local no Google Maps",
                             display_text="🗺️"
+                        ),
+                        "Link Avaliação": st.column_config.LinkColumn(
+                            "Avaliação",
+                            help="Clique para avaliar o atendimento",
+                            display_text="⭐"
                         )
                     },
                     hide_index=True,
-                    use_container_width=False
+                    use_container_width=False  # Para rolagem horizontal automática
                 )
             else:
                 st.info(f"Nenhuma atividade agendada para o dia {data_agenda.strftime('%d/%m/%Y')}.")
         else:
             st.info("Nenhuma atividade agendada encontrada.")
-
         st.markdown("---")
+
+
         # Tabela resumo
         st.header("📋 Tabela Resumo das OS")
         if not df_filtrado.empty:
