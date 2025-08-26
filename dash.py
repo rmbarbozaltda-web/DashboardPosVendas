@@ -51,6 +51,7 @@ if st.session_state["authentication_status"]:
             depara_etiquetas = pd.read_excel('DePara Etiquetas.xlsx')
             depara_estados = pd.read_excel('DePara Estados.xlsx')
             avaliacoes_garantia = pd.read_excel('avaliacoes_garantia.xlsx')
+            
             # --- FILTRAR OS TOTALMENTE ARQUIVADAS ---
             if 'archived' in atividades.columns:
                 atividades['archived'] = atividades['archived'].astype(bool)
@@ -1037,14 +1038,16 @@ if st.session_state["authentication_status"]:
                 st.error(f"Nenhuma coluna de data encontrada. Colunas procuradas: {date_columns}")
                 st.info(f"Colunas disponíveis no dataset: {list(atividades.columns)}")         
 
-        # --- SEÇÃO AGENDA DOS TÉCNICOS ---
+                        # --- SEÇÃO AGENDA DOS TÉCNICOS ---
         st.markdown("---")
         st.header("🗓️ Agenda dos Técnicos")
+
         data_agenda = st.date_input(
             "Selecione uma data para ver a agenda",
             datetime.now(),
             format="DD/MM/YYYY"
         )
+
         os_garantia_ids = ordens_servico['id'].unique()
         atividades_agendadas = atividades[
             (atividades['order'].isin(os_garantia_ids)) &
@@ -1055,70 +1058,109 @@ if st.session_state["authentication_status"]:
         if not atividades_agendadas.empty and data_agenda:
             fuso_horario_br = 'America/Sao_Paulo'
             data_selecionada_tz = pd.Timestamp(data_agenda, tz=fuso_horario_br)
-            atividades_do_dia = atividades_agendadas[atividades_agendadas['scheduling'].dt.date == data_selecionada_tz.date()]
-            if not atividades_do_dia.empty:
-                agenda_df = pd.merge(
-                    atividades_do_dia,
-                    df_filtrado[['id', 'Numero OS', 'Cliente']],
-                    left_on='order',
-                    right_on='id',
-                    how='left'
-                )
-                agenda_df.dropna(subset=['Numero OS'], inplace=True)
+            atividades_do_dia = atividades_agendadas[atividades_agendadas['scheduling'].dt.date == data_selecionada_tz.date()].copy()
+            
+            # Certifique-se de preservar o id da atividade
+            if 'id' in atividades_do_dia.columns:
+                atividades_do_dia = atividades_do_dia.rename(columns={'id':'atividade_id'})
 
-                # Link do mapa
-                def criar_url_mapa(coords):
-                    if pd.notna(coords) and isinstance(coords, str) and ',' in coords:
-                        coords_limpas = coords.replace(" ", "")
-                        return f"https://www.google.com/maps/search/?api=1&query={coords_limpas}"
-                    return None
+            # Primeiro merge: liga atividade com OS
+            agenda_df = pd.merge(
+                atividades_do_dia,
+                df_filtrado[['id', 'Numero OS', 'Cliente']],
+                left_on='order',
+                right_on='id',
+                how='left',
+                suffixes=('', '_os')
+            )
+            agenda_df.dropna(subset=['Numero OS'], inplace=True)
 
-                # Para link da avaliação: Retorna emoji estrela quando houver link, senão retorna None
-                def link_estrela(link):
-                    if pd.notna(link) and isinstance(link, str) and link.strip():
-                        return link  # O endereço será usado no LinkColumn!
-                    return None
+            # Segundo merge: liga avaliação pela chave correta
+            avaliacoes_cols = ['task.id', 'stars', 'comment', 'createdAt']
+            avaliacoes_garantia['createdAt'] = pd.to_datetime(avaliacoes_garantia['createdAt'])
+            idx = avaliacoes_garantia.groupby('task.id')['createdAt'].idxmax()
+            avaliacoes_latest = avaliacoes_garantia.loc[idx, avaliacoes_cols]
+            agenda_df = pd.merge(
+                agenda_df,
+                avaliacoes_latest,
+                left_on="atividade_id",
+                right_on="task.id",
+                how="left"
+            )
 
-                def display_text_estrela(link):
-                    if pd.notna(link) and isinstance(link, str) and link.strip():
-                        return "⭐"
-                    return ""
+            # Debug: Veja as colunas disponíveis antes de selecionar
+            print("Colunas de agenda_df:", agenda_df.columns.tolist())
 
-                agenda_df['map_url'] = agenda_df['coords'].apply(criar_url_mapa)
-                agenda_df['rating_link'] = agenda_df['ratingLink'].apply(link_estrela)
-                agenda_df['estrela_exibir'] = agenda_df['ratingLink'].apply(display_text_estrela)
+            # Funções auxiliares
+            def criar_url_mapa(coords):
+                if pd.notna(coords) and isinstance(coords, str) and ',' in coords:
+                    coords_limpas = coords.replace(" ", "")
+                    return f"https://www.google.com/maps/search/?api=1&query={coords_limpas}"
+                return None
 
-                agenda_display = agenda_df[['scheduling', 'Cliente', 'colaborador_nome','Numero OS', 'map_url',  'rating_link']].copy()
-                agenda_display.columns = ['Horário', 'Cliente','Técnico','Número OS', 'Localização',   'Link Avaliação']
+            def link_estrela(link):
+                if pd.notna(link) and isinstance(link, str) and link.strip():
+                    return link
+                return None
+
+            agenda_df['map_url'] = agenda_df['coords'].apply(criar_url_mapa)
+            agenda_df['rating_link'] = agenda_df['ratingLink'].apply(link_estrela)
+
+            # Seleciona só as colunas que existem
+            cols_necessarios = ['scheduling', 'Cliente', 'colaborador_nome', 'Numero OS', 'map_url', 'rating_link',
+                                'stars', 'comment', 'createdAt']
+            cols_existentes = [c for c in cols_necessarios if c in agenda_df.columns]
+            agenda_display = agenda_df[cols_existentes].copy()
+
+            # Renomeia colunas para exibição, só até o número existente!
+            nomes_exibicao = ['Horário', 'Cliente', 'Técnico', 'Número OS', 'Localização', 'Link Avaliação',
+                            'Estrelas', 'Comentário', 'Data Avaliação']
+            agenda_display.columns = nomes_exibicao[:len(agenda_display.columns)]
+
+            if 'Horário' in agenda_display.columns:
                 agenda_display = agenda_display.sort_values(by='Horário')
+                agenda_display['Horário'] = pd.to_datetime(agenda_display['Horário'], errors='coerce').dt.strftime('%H:%M')
+            if 'Data Avaliação' in agenda_display.columns:
+                agenda_display['Data Avaliação'] = pd.to_datetime(agenda_display['Data Avaliação'], errors='coerce').dt.strftime('%d/%m/%Y %H:%M')
 
-                # Mostra a tabela com o LinkColumn para ambas as colunas interativas!
-                st.dataframe(
-                    agenda_display,
-                    column_config={
-                        "Horário": st.column_config.TimeColumn(
-                            "Horário",
-                            format="HH:mm",
-                        ),
-                        "Localização": st.column_config.LinkColumn(
-                            "Localização",
-                            help="Clique para abrir o local no Google Maps",
-                            display_text="🗺️"
-                        ),
-                        "Link Avaliação": st.column_config.LinkColumn(
-                            "Avaliação",
-                            help="Clique para avaliar o atendimento",
-                            display_text="⭐"
-                        )
-                    },
-                    hide_index=True,
-                    use_container_width=False  # Para rolagem horizontal automática
-                )
-            else:
-                st.info(f"Nenhuma atividade agendada para o dia {data_agenda.strftime('%d/%m/%Y')}.")
+            st.dataframe(
+                agenda_display,
+                column_config={
+                    "Horário": st.column_config.TimeColumn(
+                        "Horário",
+                        format="HH:mm",
+                    ),
+                    "Localização": st.column_config.LinkColumn(
+                        "Localização",
+                        help="Clique para abrir o local no Google Maps",
+                        display_text="🗺️"
+                    ),
+                    "Link Avaliação": st.column_config.LinkColumn(
+                        "Avaliação",
+                        help="Clique para avaliar o atendimento",
+                        display_text="⭐"
+                    ),
+                    "Estrelas": st.column_config.TextColumn(
+                        "Estrelas",
+                        help="Nota do cliente de 1 a 5 estrelas"
+                    ),
+                    "Comentário": st.column_config.TextColumn(
+                        "Comentário",
+                        help="Comentário do cliente, se houver"
+                    ),
+                    "Data Avaliação": st.column_config.DatetimeColumn(
+                        "Data Avaliação",
+                        format="DD/MM/YYYY HH:mm"
+                    )
+                },
+                hide_index=True,
+                use_container_width=False
+            )
+
         else:
-            st.info("Nenhuma atividade agendada encontrada.")
+            st.info(f"Nenhuma atividade agendada para o dia {data_agenda.strftime('%d/%m/%Y')}.")
         st.markdown("---")
+
 
 
         # Tabela resumo
