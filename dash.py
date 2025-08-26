@@ -1239,7 +1239,7 @@ if st.session_state["authentication_status"]:
         st.markdown("### Comentários Recentes dos Clientes")
         st.dataframe(comentarios_recentes, hide_index=True, use_container_width=True)
 
-
+        st.markdown("---")
 
 
         # Tabela resumo
