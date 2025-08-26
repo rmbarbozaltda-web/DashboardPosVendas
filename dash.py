@@ -1056,11 +1056,11 @@ if st.session_state["authentication_status"]:
         st.header("📋 Tabela Resumo das OS")
         if not df_filtrado.empty:
             df_display = df_filtrado[[
-                'Numero OS', 'Cliente', 'Cliente - Estado', 'Criado em',
+                'Numero OS', 'Cliente', 'Descrição','Cliente - Estado', 'Criado em',
                 'status_final', 'data_conclusao', 'os_concluida', 'link'
             ]].copy()
             df_display['os_concluida'] = df_display['os_concluida'].map({True: '✅ Sim', False: '❌ Não'})
-            df_display.columns = ['Número OS', 'Cliente', 'Estado', 'Criado em', 'Status Final', 'Data Conclusão', 'Concluída', 'link']
+            df_display.columns = ['Número OS', 'Cliente', 'Descrição', 'Estado', 'Criado em', 'Status Final', 'Data Conclusão', 'Concluída', 'link']
 
             st.dataframe(
                 df_display,
