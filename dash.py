@@ -342,6 +342,53 @@ if st.session_state["authentication_status"]:
         )
         st.plotly_chart(fig_evolucao, use_container_width=True)
 
+                    # ---------------- Gráfico de linha: Evolução acumulada do backlog mês a mês -----------------
+        st.markdown("---")
+        st.subheader("📈 Evolução Acumulada do Backlog (mês a mês)")
+
+        # Certifique-se de ter as colunas certas e removendo OS sem datas
+        df_backlog = ordens_servico.copy()
+        df_backlog = df_backlog[df_backlog['Criado em'].notna()]
+
+        # Pegue o timezone da coluna "Criado em"
+        tz = df_backlog['Criado em'].dt.tz
+
+        primeiro_mes = df_backlog['Criado em'].min().to_period('M').to_timestamp()
+        ultimo_mes = max(
+            df_backlog['Criado em'].max() if df_backlog['Criado em'].notna().any() else pd.Timestamp.now(tz),
+            df_backlog['data_conclusao'].max() if df_backlog['data_conclusao'].notna().any() else pd.Timestamp.now(tz)
+        ).to_period('M').to_timestamp()
+
+        # Lista de meses, agora timezone-aware
+        meses = pd.date_range(primeiro_mes, ultimo_mes, freq='MS', tz=tz)
+
+        backlog_acumulado = []
+
+        for mes in meses:
+            fim_mes = (mes + pd.offsets.MonthEnd(0)).tz_convert(tz)
+            # Todas as datas .tz_convert(tz)
+            criadas = df_backlog[df_backlog['Criado em'] <= fim_mes]
+            concluidas = criadas[criadas['data_conclusao'].notna() & (criadas['data_conclusao'] <= fim_mes)]
+            backlog = len(criadas) - len(concluidas)
+            backlog_acumulado.append({
+                "mes": mes,
+                "backlog_acumulado": backlog
+            })
+
+        df_evolucao_backlog = pd.DataFrame(backlog_acumulado)
+
+        fig_backlog = px.line(
+            df_evolucao_backlog,
+            x="mes",
+            y="backlog_acumulado",
+            markers=True,
+            title="Evolução Acumulada do Backlog de OS (Mês a Mês)",
+            labels={"mes": "Mês", "backlog_acumulado": "Backlog acumulado"}
+        )
+        fig_backlog.update_layout(xaxis=dict(tickformat="%b/%Y"))
+
+        st.plotly_chart(fig_backlog, use_container_width=True)
+
         # --- GRÁFICO DE VELOCÍMETRO ---
         st.subheader("Percentual de OS Concluídas no Prazo (SLA)")
         fig_sla = go.Figure(go.Indicator(
@@ -351,7 +398,7 @@ if st.session_state["authentication_status"]:
             domain={'x': [0, 1], 'y': [0, 1]},
             gauge={
                 'axis': {'range': [None, 100], 'tickwidth': 1, 'tickcolor': "darkblue"},
-                'bar': {'color': "#1e293b"},
+                'bar': {'color': "#063581"},
                 'borderwidth': 2,
                 'bordercolor': "gray",
                 'steps': [
