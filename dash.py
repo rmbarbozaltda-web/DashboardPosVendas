@@ -1038,7 +1038,7 @@ if st.session_state["authentication_status"]:
                 st.error(f"Nenhuma coluna de data encontrada. Colunas procuradas: {date_columns}")
                 st.info(f"Colunas disponíveis no dataset: {list(atividades.columns)}")         
 
-                        # --- SEÇÃO AGENDA DOS TÉCNICOS ---
+                                # --- SEÇÃO AGENDA DOS TÉCNICOS ---
         st.markdown("---")
         st.header("🗓️ Agenda dos Técnicos")
 
@@ -1059,10 +1059,10 @@ if st.session_state["authentication_status"]:
             fuso_horario_br = 'America/Sao_Paulo'
             data_selecionada_tz = pd.Timestamp(data_agenda, tz=fuso_horario_br)
             atividades_do_dia = atividades_agendadas[atividades_agendadas['scheduling'].dt.date == data_selecionada_tz.date()].copy()
-            
+
             # Certifique-se de preservar o id da atividade
             if 'id' in atividades_do_dia.columns:
-                atividades_do_dia = atividades_do_dia.rename(columns={'id':'atividade_id'})
+                atividades_do_dia = atividades_do_dia.rename(columns={'id': 'atividade_id'})
 
             # Primeiro merge: liga atividade com OS
             agenda_df = pd.merge(
@@ -1088,8 +1088,8 @@ if st.session_state["authentication_status"]:
                 how="left"
             )
 
-            # Debug: Veja as colunas disponíveis antes de selecionar
-            print("Colunas de agenda_df:", agenda_df.columns.tolist())
+            # Cria a coluna com o status da avaliação usando emoji
+            agenda_df['Status Avaliação'] = agenda_df['stars'].apply(lambda x: '✅' if pd.notna(x) else '⚠️')
 
             # Funções auxiliares
             def criar_url_mapa(coords):
@@ -1107,12 +1107,28 @@ if st.session_state["authentication_status"]:
             agenda_df['rating_link'] = agenda_df['ratingLink'].apply(link_estrela)
 
             # Seleciona só as colunas que existem
-            cols_necessarios = ['scheduling', 'Cliente', 'colaborador_nome', 'Numero OS', 'map_url', 'rating_link']
+            cols_necessarios = [
+                'scheduling',
+                'Cliente',
+                'colaborador_nome',
+                'Numero OS',
+                'map_url',
+                'rating_link',
+                'Status Avaliação'
+            ]
             cols_existentes = [c for c in cols_necessarios if c in agenda_df.columns]
             agenda_display = agenda_df[cols_existentes].copy()
 
             # Renomeia colunas para exibição, só até o número existente!
-            nomes_exibicao = ['Horário', 'Cliente', 'Técnico', 'Número OS', 'Localização', 'Link Avaliação']
+            nomes_exibicao = [
+                'Horário',
+                'Cliente',
+                'Técnico',
+                'Número OS',
+                'Localização',
+                'Link Avaliação',
+                'Status Avaliação'
+            ]
             agenda_display.columns = nomes_exibicao[:len(agenda_display.columns)]
 
             if 'Horário' in agenda_display.columns:
@@ -1138,6 +1154,10 @@ if st.session_state["authentication_status"]:
                         help="Clique para avaliar o atendimento",
                         display_text="⭐"
                     ),
+                    "Status Avaliação": st.column_config.TextColumn(
+                        "Status Avaliação",
+                        help="Situação da avaliação: ✅ feita, ⚠️ pendente"
+                    ),
                     "Estrelas": st.column_config.TextColumn(
                         "Estrelas",
                         help="Nota do cliente de 1 a 5 estrelas"
@@ -1158,6 +1178,7 @@ if st.session_state["authentication_status"]:
         else:
             st.info(f"Nenhuma atividade agendada para o dia {data_agenda.strftime('%d/%m/%Y')}.")
         st.markdown("---")
+
 
                     # --- INDICADORES DE AVALIAÇÃO DE ATENDIMENTO ---
 
