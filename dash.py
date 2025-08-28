@@ -469,7 +469,7 @@ if st.session_state["authentication_status"]:
                 # 1. Filtrar formulários que contém "FALHA" na coluna "name"
                 formularios_falha = respostas[respostas['name'].str.contains('FALHA', case=False, na=False)]
                 # Filtrar apenas as OS que estão no período selecionado
-                os_ids_filtradas = set(ordens_servico['id'].tolist())
+                os_ids_filtradas = set(df_filtrado['id'].tolist())
                 formularios_falha = formularios_falha[formularios_falha[link_column_name].isin(os_ids_filtradas)]
                 if not formularios_falha.empty:
                     # 2. Localizar falhas
