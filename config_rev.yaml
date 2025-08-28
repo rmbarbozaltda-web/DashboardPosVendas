@@ -1,0 +1,34 @@
+credentials:
+  usernames:
+    rmbarboza:
+      email: posvendas01@topema.com
+      name: Rafael Machado Barboza
+      password: '$2b$12$m2GrP6hv.BMxvdTvNERY5etD7W5UTAjjJSoN0K35MFNvRnplqmGfC'
+    amasini:
+      email: adriana.masini@topema.com
+      name: Adriana Masini
+      password: '$2b$12$fKtFMCE.0nRnNIv9S4TmouSPkya1RpvaGeiMJBruUDPV/OqnLTk56'
+    jcury:
+      email: joao.victor@topema.com
+      name: João Cury
+      password: '$2b$12$Mjl94P2HNr2ZcxdCyvOgluprmRuuZCEbGxGNfs7XbjulHSveQJ8Qq'
+    dsouza:
+      email: diego.souza@topema.com
+      name: Diego Orlando Souza
+      password: '$2b$12$yVjNbDVlaXO0iPv/Gu6xAOGKGpPLGzvxpIZF4CvxgyshPipd5Um5m'
+    csantos:
+      email: tecnico04@topema.com
+      name: Carlos Henrique
+      password: '$2b$12$6Ma3Y.l4f5qEwFvTPQwP1e8XYdVhjlZ7nYyfX7hX2Pl6wiPl8SK6G'
+    afernandezs:
+      email: tecnico01@topema.com
+      name: Toninho
+      password: '$2b$12$YBiBC8FeYKKsxGHahL6csO72popyWyZb3VsLgpPIDC7/DXJLYb3JK'
+cookie:
+  expiry_days: 30
+  key: 'spfc'
+  name: 'cookie_dashboard_garantia'
+
+
+
+
