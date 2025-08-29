@@ -456,8 +456,13 @@ if st.session_state["authentication_status"]:
             else:
                 st.info("Nenhum equipamento encontrado para os filtros selecionados.")
 
-        # --- GRÁFICO FALHA, CAUSA E AÇÃO ---
+                # --- GRÁFICO FALHA, CAUSA E AÇÃO ---
         st.subheader("📊 Análise de Falhas, Causas e Ações Corretivas")
+
+        # >>>>>>>> AJUSTE AQUI: DESCONSIDERAR "archived" == "VERDADEIRO" <<<<<<<<
+        if 'archived' in respostas.columns:
+            respostas = respostas[respostas['archived'] != "VERDADEIRO"]
+
         if 'name' in respostas.columns and 'title' in respostas.columns and 'answer' in respostas.columns:
             # Identificar coluna de vínculo
             link_column_name = None
@@ -619,7 +624,6 @@ if st.session_state["authentication_status"]:
                                 # Calcular range adequado para o eixo X
                                 max_val = falhas_counts.max()
                                 fig_falhas.update_xaxes(range=[0, max_val * 1.25])
-                                
                                 # Configurar texto das barras
                                 fig_falhas.update_traces(
                                     textposition='outside',
@@ -653,7 +657,6 @@ if st.session_state["authentication_status"]:
                                 # Calcular range adequado para o eixo X
                                 max_val = causas_counts.max()
                                 fig_causas.update_xaxes(range=[0, max_val * 1.25])
-                                
                                 # Configurar texto das barras
                                 fig_causas.update_traces(
                                     textposition='outside',
@@ -687,7 +690,6 @@ if st.session_state["authentication_status"]:
                                 # Calcular range adequado para o eixo X
                                 max_val = acoes_counts.max()
                                 fig_acoes.update_xaxes(range=[0, max_val * 1.25])
-                                
                                 # Configurar texto das barras
                                 fig_acoes.update_traces(
                                     textposition='outside',
@@ -721,6 +723,7 @@ if st.session_state["authentication_status"]:
                 st.warning("Não foi possível encontrar uma coluna de vínculo ('id_OS', 'order' ou 'order.id') na tabela de respostas.")
         else:
             st.warning("As colunas 'name', 'title' e/ou 'answer' não foram encontradas na tabela de respostas.")
+
 
             # --- ANÁLISE DE RECORRÊNCIA DE PROBLEMAS ---
         st.subheader("🔄 Análise de Recorrência de Problemas")
