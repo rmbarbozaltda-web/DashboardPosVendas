@@ -1296,57 +1296,87 @@ if st.session_state["authentication_status"]:
         st.dataframe(comentarios_recentes, hide_index=True, use_container_width=True)
         st.markdown("---")
 
-        # Tabela resumo
         st.header("📋 Tabela Resumo das OS")
         if not df_filtrado.empty:
-            df_display = df_filtrado[[
-                'Numero OS', 'Cliente', 'Descrição','Cliente - Estado', 'Criado em',
-                'status_final', 'data_conclusao', 'os_concluida', 'link'
-            ]].copy()
-            df_display['os_concluida'] = df_display['os_concluida'].map({True: '✅ Sim', False: '❌ Não'})
-            df_display.columns = ['Número OS', 'Cliente', 'Descrição', 'Estado', 'Criado em', 'Status Final', 'Data Conclusão', 'Concluída', 'link']
 
-            st.dataframe(
-                df_display,
-                use_container_width=True,
-                column_config={
-                    "link": st.column_config.LinkColumn(
-                        "Relatório",
-                        help="Clique para abrir o relatório.",
-                        display_text="📄"
-                    ),
-                    "Criado em": st.column_config.DatetimeColumn(
-                        "Criado em",
-                        format="DD/MM/YYYY HH:mm",
-                    ),
-                    "Data Conclusão": st.column_config.DatetimeColumn(
-                        "Data Conclusão",
-                        format="DD/MM/YYYY HH:mm",
-                    )
-                },
-                hide_index=True
-            )
+                # Garantindo os tipos para merge
+                df_filtrado['id'] = df_filtrado['id'].astype(str)
+                atividades['order'] = atividades['order'].astype(str)
+                atividades['scheduling'] = pd.to_datetime(atividades['scheduling'], errors='coerce')
 
-            @st.cache_data
-            def to_excel(df):
-                df_export = df.copy()
-                df_export['Criado em'] = df_export['Criado em'].apply(lambda x: x.strftime('%d/%m/%Y %H:%M') if pd.notna(x) else 'N/A')
-                df_export['Data Conclusão'] = df_export['Data Conclusão'].apply(lambda x: x.strftime('%d/%m/%Y %H:%M') if pd.notna(x) else 'N/A')
-                output = io.BytesIO()
-                with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                    df_export.to_excel(writer, index=False, sheet_name='OS_Filtradas')
-                processed_data = output.getvalue()
-                return processed_data
+                # Data do último agendamento de cada OS
+                ult_agendamento = atividades.groupby('order')['scheduling'].max().reset_index()
+                ult_agendamento.columns = ['id', 'Últ. Agendamento']
 
-            excel_data = to_excel(df_display)
-            st.download_button(
-                label="📥 Baixar Dados Filtrados (XLSX)",
-                data=excel_data,
-                file_name=f"os_filtradas_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
+                # Mantém a coluna 'id' para merge
+                df_display = df_filtrado[[
+                    'id', 'Numero OS', 'Cliente', 'Descrição', 'Cliente - Estado', 'Criado em',
+                    'status_final', 'data_conclusao', 'os_concluida', 'link'
+                ]].copy()
+
+                df_display = df_display.merge(ult_agendamento, how='left', on='id')
+
+                # Coloca a 'Últ. Agendamento' ANTES da coluna 'data_conclusao'
+                cols = [
+                    'Numero OS', 'Cliente', 'Descrição', 'Cliente - Estado', 'Criado em',
+                    'status_final', 'os_concluida', 'Últ. Agendamento', 'data_conclusao', 'link'
+                ]
+                df_display = df_display[cols]
+
+                # Renomeia as colunas para exibição
+                df_display.columns = [
+                    'Número OS', 'Cliente', 'Descrição', 'Estado', 'Criado em',
+                    'Status Final', 'Concluída', 'Últ. Agendamento', 'Data Conclusão', 'link'
+                ]
+                df_display['Concluída'] = df_display['Concluída'].map({True: '✅ Sim', False: '❌ Não'})
+
+                st.dataframe(
+                    df_display,
+                    use_container_width=True,
+                    column_config={
+                        "link": st.column_config.LinkColumn(
+                            "Relatório",
+                            help="Clique para abrir o relatório.",
+                            display_text="📄"
+                        ),
+                        "Criado em": st.column_config.DatetimeColumn(
+                            "Criado em",
+                            format="DD/MM/YYYY HH:mm",
+                        ),
+                        "Data Conclusão": st.column_config.DatetimeColumn(
+                            "Data Conclusão",
+                            format="DD/MM/YYYY HH:mm",
+                        ),
+                        "Últ. Agendamento": st.column_config.DatetimeColumn(
+                            "Últ. Agendamento",
+                            format="DD/MM/YYYY HH:mm",
+                        ),
+                    },
+                    hide_index=True
+                )
+
+                @st.cache_data
+                def to_excel(df):
+                    df_export = df.copy()
+                    df_export['Criado em'] = df_export['Criado em'].apply(lambda x: x.strftime('%d/%m/%Y %H:%M') if pd.notna(x) else 'N/A')
+                    df_export['Data Conclusão'] = df_export['Data Conclusão'].apply(lambda x: x.strftime('%d/%m/%Y %H:%M') if pd.notna(x) else 'N/A')
+                    df_export['Últ. Agendamento'] = df_export['Últ. Agendamento'].apply(lambda x: x.strftime('%d/%m/%Y %H:%M') if pd.notna(x) else 'N/A')
+                    output = io.BytesIO()
+                    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                        df_export.to_excel(writer, index=False, sheet_name='OS_Filtradas')
+                    processed_data = output.getvalue()
+                    return processed_data
+
+                excel_data = to_excel(df_display)
+                st.download_button(
+                    label="📥 Baixar Dados Filtrados (XLSX)",
+                    data=excel_data,
+                    file_name=f"os_filtradas_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
         else:
-            st.info("Nenhuma OS encontrada com os filtros aplicados.")
+                st.info("Nenhuma OS encontrada com os filtros aplicados.")
+
     else:
         st.error("Não foi possível carregar os dados. Verifique se todos os arquivos estão na pasta correta.")
         st.info("Arquivos necessários: ordens_de_servico.xlsx, atividades.xlsx, tabela_equipamentos.xlsx, tabela_respostas.xlsx, DePara Etiquetas.xlsx, DePara Estados.xlsx")
