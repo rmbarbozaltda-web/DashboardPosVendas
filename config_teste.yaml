@@ -32,6 +32,10 @@ credentials:
       email: luiza@topema.com
       name: Luiza Cury
       password: '$2b$12$S0NJdbdCBa5sgas5V4zvOu678XtPNC4kWcZVRm8pChNjzym68iYdy'
+    kteixeira:
+      email: kaue.teixeira@topema.com
+      name: Kaue Teixeira
+      password: '$2b$12$GUA6DRDLgWKMaD6SOEBffubkm8g.bGffoXVAnnVEpIjOSr0371jQu'
 cookie:
   expiry_days: 30
   key: 'spfc' # Pode voltar para sua chave original
