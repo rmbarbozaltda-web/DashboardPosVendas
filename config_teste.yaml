@@ -36,6 +36,10 @@ credentials:
       email: kaue.teixeira@topema.com
       name: Kaue Teixeira
       password: '$2b$12$GUA6DRDLgWKMaD6SOEBffubkm8g.bGffoXVAnnVEpIjOSr0371jQu'
+    flaete:
+      email: tecnico09@topema.com
+      name: Felipe Laet
+      password: '$2b$12$CJTS7pci0Uf3VejXlXleruQbx5KbasXskqBCEQ.8xeDCyBUEg3Rne'
 cookie:
   expiry_days: 30
   key: 'spfc' # Pode voltar para sua chave original
