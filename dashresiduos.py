@@ -16,7 +16,7 @@ from yaml.loader import SafeLoader
 warnings.filterwarnings('ignore')
 # Configuração da página
 st.set_page_config(
-    page_title="Dashboard Pós-Vendas Topema",
+    page_title="Dashboard Redutor de Resísuos - Topema",
     page_icon="🏭",
     layout="wide",
     initial_sidebar_state="expanded"
