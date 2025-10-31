@@ -37,7 +37,7 @@ authenticator.login()
 if st.session_state["authentication_status"]:
     # --- FIM DA PARTE DE AUTENTICAÇÃO ---
     # Título principal
-    st.title("🏭 Dashboard Pós-Vendas Topema")
+    st.title("🏭 Dashboard Redutor de Resísuos - Topema")
     st.markdown("---")
     @st.cache_data
     def carregar_dados():
