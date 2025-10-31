@@ -16,7 +16,7 @@ from yaml.loader import SafeLoader
 warnings.filterwarnings('ignore')
 # Configuração da página
 st.set_page_config(
-    page_title="Dashboard Redutor de Resísuos - Topema",
+    page_title="Dashboard Redutor de Resíduos - Topema",
     page_icon="🏭",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -37,7 +37,7 @@ authenticator.login()
 if st.session_state["authentication_status"]:
     # --- FIM DA PARTE DE AUTENTICAÇÃO ---
     # Título principal
-    st.title("🏭 Dashboard Redutor de Resísuos - Topema")
+    st.title("🏭 Dashboard Redutor de Resíduos - Topema")
     st.markdown("---")
     @st.cache_data
     def carregar_dados():
