@@ -40,6 +40,15 @@ credentials:
       email: tecnico09@topema.com
       name: Felipe Laet
       password: '$2b$12$CJTS7pci0Uf3VejXlXleruQbx5KbasXskqBCEQ.8xeDCyBUEg3Rne'
+    lsantos:
+      email: lourival.santos@topema.com
+      name: Lourival Santos
+      password: '$2b$12$1W6w9jJnrUU5YBwr7goS.Oo88wxoaH.YFc1OjzcdwhBo7S8C.6cU2'
+    edelphino:
+      email: eduardo.delphino@topema.com
+      name: Eduardo Delphino
+      password: '$2b$12$3EWlcO0OGi.1/zDR/fVA.O7eIVecevlPQ.MkUGp.6vpwq/wtlUBxS'
+    
 cookie:
   expiry_days: 30
   key: 'spfc' # Pode voltar para sua chave original

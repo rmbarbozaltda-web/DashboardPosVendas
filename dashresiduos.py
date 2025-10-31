@@ -60,7 +60,7 @@ if st.session_state["authentication_status"]:
             # Filtrando para excluir ordens de Garantia e Qualidade
             ordens_servico = ordens_servico[~ordens_servico['Tipo de Serviço'].isin(['Qualidade'])]
             # Filtrando para incluir tanto TFK quanto REDUTORA
-            ordens_servico = ordens_servico[ordens_servico['Etiquetas'].isin(['TFK', 'REDUTORA'])]
+            ordens_servico = ordens_servico[ordens_servico['Etiquetas'].isin(['TFK', 'REDUTORA', 'ECO'])]
             # Convertendo datas e tratando timezones
             colunas_data_os = ['Criado em (UTC)', 'Atualizado em (UTC)', 'Atualizado em (Brasília)']
             for col in colunas_data_os:
