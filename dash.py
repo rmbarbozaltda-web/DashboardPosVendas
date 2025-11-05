@@ -194,6 +194,18 @@ if st.session_state["authentication_status"]:
         # Aplicando filtros
         df_filtrado = ordens_servico.copy()
 
+                # ======================================================
+        # 🔴 EXCLUSÃO GLOBAL: remove TFK, ECO e REDUTORA de TODO o dashboard
+        # ======================================================
+        equipamentos_removidos = ["TFK", "ECO", "REDUTORA"]
+
+        df_filtrado = df_filtrado[
+            ~df_filtrado['Etiquetas_Processadas'].apply(
+                lambda etiquetas: any(equip in equipamentos_removidos for equip in etiquetas)
+            )
+        ]
+        # ======================================================
+
         if status_os_selecionado == 'Abertos':
             df_filtrado = df_filtrado[df_filtrado['os_concluida'] == False]
         elif status_os_selecionado == 'Fechados':
