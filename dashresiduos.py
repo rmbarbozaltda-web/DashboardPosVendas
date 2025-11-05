@@ -51,6 +51,26 @@ if st.session_state["authentication_status"]:
             depara_etiquetas = pd.read_excel('DePara Etiquetas.xlsx')
             depara_estados = pd.read_excel('DePara Estados.xlsx')
             avaliacoes_garantia = pd.read_excel('avaliacoes_garantia.xlsx')
+
+            # --- CORREÇÃO CRÍTICA: FORÇAR INTERPRETAÇÃO DE DATAS NO FORMATO BRASILEIRO ---
+            # Converter a coluna 'scheduling' forçando o formato DD/MM/YYYY
+            if 'scheduling' in atividades.columns:
+                # Primeiro, converter para string para garantir que não há problemas de tipo
+                atividades['scheduling'] = atividades['scheduling'].astype(str)
+                # Depois, converter para datetime usando o formato brasileiro
+                atividades['scheduling'] = pd.to_datetime(
+                    atividades['scheduling'], 
+                    format='%d/%m/%Y %H:%M:%S',
+                    errors='coerce'
+                )
+                # Se houver valores que não foram convertidos, tentar formato alternativo
+                mask = atividades['scheduling'].isna()
+                if mask.any():
+                    atividades.loc[mask, 'scheduling'] = pd.to_datetime(
+                        atividades.loc[mask, 'scheduling'].astype(str),
+                        dayfirst=True,  # Força interpretação com dia primeiro
+                        errors='coerce'
+                    )
             # --- FILTRAR OS TOTALMENTE ARQUIVADAS ---
             if 'archived' in atividades.columns:
                 atividades['archived'] = atividades['archived'].astype(bool)
@@ -58,9 +78,7 @@ if st.session_state["authentication_status"]:
                 os_ids_para_remover = status_arquivamento_por_os[status_arquivamento_por_os].index.tolist()
                 ordens_servico = ordens_servico[~ordens_servico['id'].isin(os_ids_para_remover)]
             # Filtrando para excluir ordens de Garantia e Qualidade
-            ordens_servico = ordens_servico[~ordens_servico['Tipo de Serviço'].isin(['Qualidade'])]
-            # Filtrando para incluir tanto TFK quanto REDUTORA
-            ordens_servico = ordens_servico[ordens_servico['Etiquetas'].isin(['TFK', 'REDUTORA', 'ECO'])]
+            ordens_servico = ordens_servico[~ordens_servico['Tipo de Serviço'].isin(['Qualidade','Acompanhamento'])]
             # Convertendo datas e tratando timezones
             colunas_data_os = ['Criado em (UTC)', 'Atualizado em (UTC)', 'Atualizado em (Brasília)']
             for col in colunas_data_os:
@@ -90,6 +108,10 @@ if st.session_state["authentication_status"]:
                     etiquetas_processadas = etiquetas
                 return etiquetas_processadas
             ordens_servico['Etiquetas_Processadas'] = ordens_servico.apply(processar_etiquetas, axis=1)
+            equipamentos_permitidos = ['TFK', 'REDUTORA', 'ECO']
+            ordens_servico = ordens_servico[ordens_servico['Etiquetas_Processadas'].apply(
+                lambda etiquetas: any(equip in equipamentos_permitidos for equip in etiquetas)
+            )]
             # LÓGICA DE CONCLUSÃO DAS OS - AJUSTADA
             def calcular_status_os(os_id):
                 atividades_os = atividades[atividades['order'] == os_id].copy()
@@ -196,6 +218,9 @@ if st.session_state["authentication_status"]:
             df_filtrado = df_filtrado[df_filtrado['Cliente - Estado'] == estado_selecionado]
         if equipamento_selecionado != 'Todos':
             df_filtrado = df_filtrado[df_filtrado['Etiquetas_Processadas'].apply(lambda x: equipamento_selecionado in x)]
+        if servico_selecionado != 'Todos':
+            df_filtrado = df_filtrado[df_filtrado['Tipo de Serviço'] == servico_selecionado]
+
         atividades_filtro_os = atividades[atividades['order'].isin(df_filtrado['id'])]
         if colaborador_selecionado != 'Todos':
             os_ids_colaborador = atividades[atividades['colaborador_nome'] == colaborador_selecionado]['order'].unique()
@@ -398,10 +423,20 @@ if st.session_state["authentication_status"]:
             with col2:
                 st.subheader("Top 10 Estados - Quantidade de OS")
                 estado_counts = df_filtrado['Cliente - Estado'].value_counts().head(10)
-                fig_estados = px.bar(x=estado_counts.index, y=estado_counts.values, text=estado_counts.values)
-                fig_estados.update_traces(textposition='outside', texttemplate='%{text}', marker_color='#1f77b4')
-                fig_estados.update_layout(height=400, xaxis_title="Estados", yaxis_title="Quantidade de OS", xaxis_tickangle=-45, yaxis=dict(range=[0, estado_counts.max() * 1.15 if not estado_counts.empty else 10]))
-                st.plotly_chart(fig_estados, use_container_width=True, key="grafico_estados")
+                
+                if not estado_counts.empty and len(estado_counts) > 0:
+                    fig_estados = px.bar(x=estado_counts.index, y=estado_counts.values, text=estado_counts.values)
+                    fig_estados.update_traces(textposition='outside', texttemplate='%{text}', marker_color='#1f77b4')
+                    fig_estados.update_layout(
+                        height=400, 
+                        xaxis_title="Estados", 
+                        yaxis_title="Quantidade de OS", 
+                        xaxis_tickangle=-45, 
+                        yaxis=dict(range=[0, estado_counts.max() * 1.15])
+                    )
+                    st.plotly_chart(fig_estados, use_container_width=True, key="grafico_estados")
+                else:
+                    st.info("Nenhum dado de estado disponível para os filtros selecionados.")
             # Gráfico de Equipamentos
             st.subheader("Top 10 Equipamentos com mais OS")
             df_equipamentos = df_filtrado.explode('Etiquetas_Processadas')
@@ -937,128 +972,159 @@ if st.session_state["authentication_status"]:
                 st.error(f"Nenhuma coluna de data encontrada. Colunas procuradas: {date_columns}")
                 st.info(f"Colunas disponíveis no dataset: {list(atividades.columns)}")                                                        # --- SEÇÃO AGENDA DOS TÉCNICOS ---
         st.markdown("---")
+        
         st.header("🗓️ Agenda dos Técnicos")
+
+        # ⏰ Seletor de data
         data_agenda = st.date_input(
             "Selecione uma data para ver a agenda",
             datetime.now(),
             format="DD/MM/YYYY"
         )
-        os_garantia_ids = ordens_servico['id'].unique()
-        atividades_agendadas = atividades[
-            (atividades['order'].isin(os_garantia_ids)) &
-            (atividades['archived'] == False) &
-            (atividades['scheduling'].notna())
+
+        # 🧩 ETAPA 1 — Filtrar ordens de serviço válidas
+        # ----------------------------------------------------------
+        # Excluir tipos de serviço "Qualidade" e "Acompanhamento"
+        ordens_validas = ordens_servico[
+            ~ordens_servico['Tipo de Serviço'].isin(['Qualidade', 'Acompanhamento'])
         ].copy()
-        if not atividades_agendadas.empty and data_agenda:
-            fuso_horario_br = 'America/Sao_Paulo'
-            data_selecionada_tz = pd.Timestamp(data_agenda, tz=fuso_horario_br)
-            atividades_do_dia = atividades_agendadas[atividades_agendadas['scheduling'].dt.date == data_selecionada_tz.date()].copy()
-            # Certifique-se de preservar o id da atividade
+
+        # Filtrar apenas equipamentos TFK, REDUTORA e ECO
+        equipamentos_permitidos = ['TFK', 'REDUTORA', 'ECO']
+        if 'Etiquetas_Processadas' in ordens_validas.columns:
+            ordens_validas = ordens_validas[
+                ordens_validas['Etiquetas_Processadas'].apply(
+                    lambda etiquetas: any(equip in equipamentos_permitidos for equip in etiquetas)
+                )
+            ]
+
+        # IDs válidos para merge
+        os_ids_validas = ordens_validas['id'].unique().tolist()
+
+        # 🧩 ETAPA 2 — Filtrar atividades válidas (com scheduling e OS válida)
+        # ----------------------------------------------------------
+        atividades_validas = atividades[
+            (atividades['archived'] == False) &
+            (atividades['scheduling'].notna()) &
+            (atividades['order'].isin(os_ids_validas))
+        ].copy()
+
+        # 🕓 Converter e garantir timezone e formato BR
+        atividades_validas['scheduling'] = pd.to_datetime(
+            atividades_validas['scheduling'], 
+            errors='coerce', 
+            dayfirst=True
+        )
+
+        # 🧩 ETAPA 3 — Filtrar pela data selecionada
+        # ----------------------------------------------------------
+        if not atividades_validas.empty and data_agenda:
+            dia = data_agenda.day
+            mes = data_agenda.month
+            ano = data_agenda.year
+
+            atividades_do_dia = atividades_validas[
+                (atividades_validas['scheduling'].dt.day == dia) &
+                (atividades_validas['scheduling'].dt.month == mes) &
+                (atividades_validas['scheduling'].dt.year == ano)
+            ].copy()
+        else:
+            atividades_do_dia = pd.DataFrame()
+
+        # 🧩 ETAPA 4 — MERGE entre atividades e ordens_de_serviço
+        # ----------------------------------------------------------
+        if not atividades_do_dia.empty:
+            # Garante o ID da atividade
             if 'id' in atividades_do_dia.columns:
                 atividades_do_dia = atividades_do_dia.rename(columns={'id': 'atividade_id'})
-            # Primeiro merge: liga atividade com OS
+
+            # Faz o merge com a base original (NÃO df_filtrado!)
             agenda_df = pd.merge(
                 atividades_do_dia,
-                df_filtrado[['id', 'Numero OS', 'Cliente']],
+                ordens_validas[['id', 'Numero OS', 'Cliente', 'Tipo de Serviço']],
                 left_on='order',
                 right_on='id',
                 how='left',
                 suffixes=('', '_os')
             )
-            agenda_df.dropna(subset=['Numero OS'], inplace=True)
-            # Segundo merge: liga avaliação pela chave correta
-            avaliacoes_cols = ['task.id', 'stars', 'comment', 'createdAt']
-            avaliacoes_garantia['createdAt'] = pd.to_datetime(avaliacoes_garantia['createdAt'])
-            idx = avaliacoes_garantia.groupby('task.id')['createdAt'].idxmax()
-            avaliacoes_latest = avaliacoes_garantia.loc[idx, avaliacoes_cols]
-            agenda_df = pd.merge(
-                agenda_df,
-                avaliacoes_latest,
-                left_on="atividade_id",
-                right_on="task.id",
-                how="left"
-            )
-            # Cria a coluna com o status da avaliação usando emoji
+
+            # 🕵️‍♂️ Merge com avaliações
+            if 'task.id' in avaliacoes_garantia.columns:
+                avaliacoes_garantia['createdAt'] = pd.to_datetime(avaliacoes_garantia['createdAt'], errors='coerce')
+                try:
+                    idx = avaliacoes_garantia.groupby('task.id')['createdAt'].idxmax()
+                    avaliacoes_latest = avaliacoes_garantia.loc[idx, ['task.id', 'stars', 'comment', 'createdAt']]
+                    agenda_df = pd.merge(
+                        agenda_df,
+                        avaliacoes_latest,
+                        left_on='atividade_id',
+                        right_on='task.id',
+                        how='left'
+                    )
+                except Exception as e:
+                    st.warning(f"Não foi possível associar avaliações: {e}")
+
+            # 🧩 ETAPA 5 — Preparar colunas de link e status de avaliação
+            # ----------------------------------------------------------
             agenda_df['Status Avaliação'] = agenda_df['stars'].apply(lambda x: '✅' if pd.notna(x) else '⚠️')
-            # Funções auxiliares
+
             def criar_url_mapa(coords):
                 if pd.notna(coords) and isinstance(coords, str) and ',' in coords:
-                    coords_limpas = coords.replace(" ", "")
-                    return f"https://www.google.com/maps/search/?api=1&query={coords_limpas}"
+                    return f"https://www.google.com/maps/search/?api=1&query={coords.replace(' ', '')}"
                 return None
+
             def link_estrela(link):
                 if pd.notna(link) and isinstance(link, str) and link.strip():
                     return link
                 return None
+
             agenda_df['map_url'] = agenda_df['coords'].apply(criar_url_mapa)
             agenda_df['rating_link'] = agenda_df['ratingLink'].apply(link_estrela)
-            # Seleciona só as colunas que existem
-            cols_necessarios = [
-                'scheduling',
-                'Cliente',
-                'colaborador_nome',
-                'Numero OS',
-                'map_url',
-                'rating_link',
-                'Status Avaliação'
+
+            # 🧩 ETAPA 6 — Montar dataframe visual
+            # ----------------------------------------------------------
+            colunas_exibir = [
+                'scheduling', 'Cliente', 'colaborador_nome', 'Numero OS', 
+                'Tipo de Serviço', 'map_url', 'rating_link', 'Status Avaliação'
             ]
-            cols_existentes = [c for c in cols_necessarios if c in agenda_df.columns]
-            agenda_display = agenda_df[cols_existentes].copy()
-            # Renomeia colunas para exibição, só até o número existente!
+            colunas_existentes = [c for c in colunas_exibir if c in agenda_df.columns]
+            agenda_exibir = agenda_df[colunas_existentes].copy()
+
+            # Renomear colunas para exibição
             nomes_exibicao = [
-                'Horário',
-                'Cliente',
-                'Técnico',
-                'Número OS',
-                'Localização',
-                'Link Avaliação',
-                'Status Avaliação'
+                'Data/Hora', 'Cliente', 'Técnico', 'Número OS', 
+                'Tipo de Serviço', 'Localização', 'Link Avaliação', 'Status Avaliação'
             ]
-            agenda_display.columns = nomes_exibicao[:len(agenda_display.columns)]
-            if 'Horário' in agenda_display.columns:
-                agenda_display = agenda_display.sort_values(by='Horário')
-                agenda_display['Horário'] = pd.to_datetime(agenda_display['Horário'], errors='coerce').dt.strftime('%H:%M')
-            if 'Data Avaliação' in agenda_display.columns:
-                agenda_display['Data Avaliação'] = pd.to_datetime(agenda_display['Data Avaliação'], errors='coerce').dt.strftime('%d/%m/%Y %H:%M')
+            agenda_exibir.columns = nomes_exibicao[:len(agenda_exibir.columns)]
+
+            # Ordenação e formato de hora BR
+            agenda_exibir = agenda_exibir.sort_values(by='Data/Hora')
+            agenda_exibir['Data/Hora'] = pd.to_datetime(agenda_exibir['Data/Hora'], errors='coerce')
+            agenda_exibir['Data/Hora'] = agenda_exibir['Data/Hora'].dt.strftime('%d/%m/%Y %H:%M')
+
+            # 🧩 ETAPA 7 — Exibir na tela
+            # ----------------------------------------------------------
+            st.success(f"✅ {len(agenda_exibir)} atividades encontradas para {data_agenda.strftime('%d/%m/%Y')}")
             st.dataframe(
-                agenda_display,
+                agenda_exibir,
                 column_config={
-                    "Horário": st.column_config.TimeColumn(
-                        "Horário",
-                        format="HH:mm",
-                    ),
-                    "Localização": st.column_config.LinkColumn(
-                        "Localização",
-                        help="Clique para abrir o local no Google Maps",
-                        display_text="🗺️"
-                    ),
-                    "Link Avaliação": st.column_config.LinkColumn(
-                        "Avaliação",
-                        help="Clique para avaliar o atendimento",
-                        display_text="⭐"
-                    ),
-                    "Status Avaliação": st.column_config.TextColumn(
-                        "Status Avaliação",
-                        help="Situação da avaliação: ✅ feita, ⚠️ pendente"
-                    ),
-                    "Estrelas": st.column_config.TextColumn(
-                        "Estrelas",
-                        help="Nota do cliente de 1 a 5 estrelas"
-                    ),
-                    "Comentário": st.column_config.TextColumn(
-                        "Comentário",
-                        help="Comentário do cliente, se houver"
-                    ),
-                    "Data Avaliação": st.column_config.DatetimeColumn(
-                        "Data Avaliação",
-                        format="DD/MM/YYYY HH:mm"
-                    )
+                    "Data/Hora": st.column_config.TextColumn("Data/Hora", help="Data e horário agendado"),
+                    "Cliente": st.column_config.TextColumn("Cliente", help="Nome do cliente"),
+                    "Técnico": st.column_config.TextColumn("Técnico", help="Nome do colaborador responsável"),
+                    "Número OS": st.column_config.TextColumn("Número da OS", help="Identificador original da OS"),
+                    "Tipo de Serviço": st.column_config.TextColumn("Tipo de Serviço", help="Categoria da OS"),
+                    "Localização": st.column_config.LinkColumn("Localização", display_text="🗺️"),
+                    "Link Avaliação": st.column_config.LinkColumn("Avaliação", display_text="⭐"),
+                    "Status Avaliação": st.column_config.TextColumn("Status", help="✅ feita ou ⚠️ pendente"),
                 },
                 hide_index=True,
-                use_container_width=False
+                use_container_width=True
             )
+
         else:
-            st.info(f"Nenhuma atividade agendada para o dia {data_agenda.strftime('%d/%m/%Y')}.")
+            st.warning(f"⚠️ Nenhuma atividade encontrada para {data_agenda.strftime('%d/%m/%Y')}.")
+              
+      
         st.markdown("---")
                                                 # --- INDICADORES DE AVALIAÇÃO DE ATENDIMENTO ---
         # 1. CARREGUE as ordens de serviço, GARANTA o nome certo da coluna do número OS!
