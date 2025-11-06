@@ -1232,6 +1232,18 @@ if st.session_state["authentication_status"]:
             df_filtrado['id'] = df_filtrado['id'].astype(str)
             atividades['order'] = atividades['order'].astype(str)
             atividades['scheduling'] = pd.to_datetime(atividades['scheduling'], errors='coerce')
+
+            # ============================================================
+            # NOVO: Preparar dados de equipamentos usando coluna "name"
+            # ============================================================
+            equipamentos['id_OS'] = equipamentos['id_OS'].astype(str) # Garante que a chave é string
+            
+            # Agrupar equipamentos por OS (caso haja múltiplos equipamentos por OS)
+            equipamentos_por_os = equipamentos.groupby('id_OS')['name'].apply(
+                lambda x: ', '.join(x.dropna().astype(str).unique())
+            ).reset_index()
+            equipamentos_por_os.columns = ['id', 'Equipamentos']
+            # ============================================================
             
             # Data do último agendamento de cada OS
             ult_agendamento = atividades.groupby('order')['scheduling'].max().reset_index()
@@ -1244,17 +1256,24 @@ if st.session_state["authentication_status"]:
             ]].copy()
             
             df_display = df_display.merge(ult_agendamento, how='left', on='id')
+
+            # ============================================================
+            # NOVO: Merge com equipamentos
+            # ============================================================
+            df_display = df_display.merge(equipamentos_por_os, how='left', on='id')
+            # Preencher valores vazios para OS sem equipamento
+            df_display['Equipamentos'] = df_display['Equipamentos'].fillna('Sem equipamento')
+            # ============================================================
             
             # Coloca a 'Últ. Agendamento' ANTES da coluna 'data_conclusao'
             cols = [
-                'Numero OS', 'Cliente', 'Descrição', 'Cliente - Estado', 'Criado em',
+                'Numero OS', 'Cliente', 'Equipamentos', 'Descrição', 'Cliente - Estado', 'Criado em', # <-- ADICIONADO AQUI
                 'status_final', 'os_concluida', 'Últ. Agendamento', 'data_conclusao', 'Tipo de Serviço', 'link'
             ]
             df_display = df_display[cols]
-            
             # Renomeia as colunas para exibição
             df_display.columns = [
-                'Número OS', 'Cliente', 'Descrição', 'Estado', 'Criado em',
+                'Número OS', 'Cliente', 'Equipamentos', 'Descrição', 'Estado', 'Criado em', # <-- ADICIONADO AQUI
                 'Status Final', 'Concluída', 'Últ. Agendamento', 'Data Conclusão', 'Tipo de Serviço', 'link'
             ]
             
@@ -1285,6 +1304,15 @@ if st.session_state["authentication_status"]:
                         "Tipo de Serviço",
                         help="Categoria do serviço realizado"
                     ),
+                    # ============================================================
+                    # NOVO: Configuração da coluna Equipamentos
+                    # ============================================================
+                    "Equipamentos": st.column_config.TextColumn(
+                        "Equipamentos",
+                        help="Equipamentos vinculados à OS",
+                        width="medium" # Ajusta a largura da coluna
+                    ),
+                    # ============================================================
                 },
                 hide_index=True
             )
